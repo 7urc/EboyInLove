@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="logo.jpg" type="image/jpeg">
+
+  <title>Yuzu-cord</title>
+</head>
+<body>
+    <body>
+
+  <div id="sidebar">
+    <input id="token" type="text" placeholder="Token Discord (ALT)" style="width: 100%; margin-bottom: 6px;" oninput="connect()">
+    <button onclick="loadGuilds()">Serveurs</button>
+    <button onclick="loadDMs()">DMs / Groupes</button>
+
+    <div class="group">Serveurs</div>
+    <ul id="guildList"></ul>
+
+    <div class="group">DMs & Groupes</div>
+    <ul id="dmList"></ul>
+    
+    <div id="userProfile" class="user-profile hidden">
+      <div class="user-avatar">
+        <img id="userAvatar" src="" alt="Avatar">
+        <div class="status-indicator online"></div>
+      </div>
+      <div class="user-info">
+        <div class="user-username" id="userUsername">Utilisateur</div>
+        <div class="user-status">En ligne</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="channelSidebar" class="hidden">
+    <div id="currentGuildName" class="guild-header"></div>
+    <div class="group">Salons</div>
+    <ul id="channelList"></ul>
+  </div>
+
+  <main id="mainContainer">
+    <header id="chatHeader">
+      <span id="chatTitle">Aucune conversation</span>
+      <div id="topRightLabel">Yuzu</div>
+    </header>
+    <section id="chat"></section>
+    <footer id="inputBox">
+      <input id="mentions" type="text" placeholder="Mentions automatiques (ex : @everyone <@id>)" />
+      <textarea id="message" placeholder="Message..."></textarea>
+    </footer>
+  </main>
+
+
+
+ 
+  <div id="userModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="close" onclick="closeUserModal()">&times;</span>
+      </div>
+      <div class="profile-banner" id="profileBanner"></div>
+      <div class="profile-info">
+        <div class="profile-avatar-large">
+          <img id="modalAvatar" src="" alt="Avatar">
+          <div class="status-indicator-large online" id="modalStatus"></div>
+        </div>
+        <div class="profile-details">
+          <h2 id="modalUsername">Utilisateur</h2>
+          <p id="modalDiscriminator">#0000</p>
+          <div class="profile-badges" id="modalBadges"></div>
+          <div class="profile-section">
+            <h3>À propos de moi</h3>
+            <p id="modalBio">Aucune biographie.</p>
+          </div>
+          <div class="profile-section">
+            <h3>Informations</h3>
+            <div class="profile-field">
+              <span class="field-label">ID utilisateur:</span>
+              <span class="field-value" id="modalUserId">N/A</span>
+            </div>
+            <div class="profile-field">
+              <span class="field-label">Création du compte:</span>
+              <span class="field-value" id="modalCreatedAt">N/A</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let token = '';
+    let currentChannelId = null;
+    let socket = null;
+    let userId = null;
+    let guildMemberCache = new Map();
+
+    document.getElementById('message').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessageHard();
+      }
+    });
+
+    async function connect() {
+      token = document.getElementById('token').value;
+      if (!token) return;
+
+      const user = await fetch('https://discord.com/api/v9/users/@me', {
+        headers: { Authorization: token }
+      }).then(r => r.json());
+      userId = user.id;
+      
+      // Afficher le profil utilisateur
+      updateUserProfile(user);
+
+      if (socket) socket.close();
+      socket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify({
+          op: 2,
+          d: {
+            token,
+            intents: 32767,
+            properties: {
+              os: 'linux', browser: 'yuzu', device: 'yuzu'
+            }
+          }
+        }));
+      };
+
+      socket.onmessage = ({ data }) => {
+        const payload = JSON.parse(data);
+        if (payload.t === 'MESSAGE_CREATE') {
+          const msg = payload.d;
+          if (msg.channel_id === currentChannelId && msg.author.id !== userId) {
+            appendMessage(msg.author, msg.content);
+          }
+        }
+      };
+    }
+
+    async function loadGuilds() {
+      const guilds = await fetch('https://discord.com/api/v9/users/@me/guilds', {
+        headers: { Authorization: token }
+      }).then(r => r.json());
+      const ul = document.getElementById('guildList');
+      ul.innerHTML = '';
+      hideChannelSidebar();
+      
+      for (const g of guilds) {
+        const li = document.createElement('li');
+        li.className = 'server-item';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'server-avatar';
+        
+        if (g.icon) {
+          const img = document.createElement('img');
+          img.src = `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=32`;
+          img.alt = g.name;
+          img.onerror = () => {
+            avatar.innerHTML = g.name.charAt(0).toUpperCase();
+          };
+          avatar.appendChild(img);
+        } else {
+          avatar.textContent = g.name.charAt(0).toUpperCase();
+        }
+        
+        const name = document.createElement('span');
+        name.className = 'server-name';
+        name.textContent = g.name;
+        
+        li.appendChild(avatar);
+        li.appendChild(name);
+        li.onclick = () => loadChannels(g.id, g.name);
+        ul.appendChild(li);
+      }
+    }
+
+    async function loadChannels(guildId, guildName) {
+      const channels = await fetch(`https://discord.com/api/v9/guilds/${guildId}/channels`, {
+        headers: { Authorization: token }
+      }).then(r => r.json());
+      
+      // Afficher la sidebar des salons
+      showChannelSidebar();
+      document.getElementById('currentGuildName').textContent = guildName;
+      
+      const ul = document.getElementById('channelList');
+      ul.innerHTML = '';
+      channels.filter(c => c.type === 0).forEach(c => {
+        const li = document.createElement('li');
+        li.className = 'channel-item';
+        li.innerHTML = `<span class="channel-hash">#</span><span class="channel-name">${c.name}</span>`;
+        li.onclick = () => openChannel(c.id, `${guildName} / #${c.name}`);
+        ul.appendChild(li);
+      });
+    }
+
+    function showChannelSidebar() {
+      document.getElementById('channelSidebar').classList.remove('hidden');
+    }
+
+    function hideChannelSidebar() {
+      document.getElementById('channelSidebar').classList.add('hidden');
+    }
+
+    function updateUserProfile(user) {
+      const profileDiv = document.getElementById('userProfile');
+      const avatarImg = document.getElementById('userAvatar');
+      const usernameDiv = document.getElementById('userUsername');
+      
+      // Mettre à jour l'avatar
+      avatarImg.src = getAvatarUrl(user);
+      avatarImg.alt = user.username;
+      
+      // Mettre à jour le nom d'utilisateur
+      usernameDiv.textContent = user.username;
+      
+      // Afficher le profil
+      profileDiv.classList.remove('hidden');
+    }
+
+    async function loadDMs() {
+      const dms = await fetch('https://discord.com/api/v9/users/@me/channels', {
+        headers: { Authorization: token }
+      }).then(r => r.json());
+      const ul = document.getElementById('dmList');
+      ul.innerHTML = '';
+      hideChannelSidebar(); // Cacher la sidebar des salons quand on charge les DMs
+      
+      for (const dm of dms) {
+        const li = document.createElement('li');
+        li.className = 'dm-item';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'dm-avatar';
+        
+        if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
+          // DM privé
+          const user = dm.recipients[0];
+          const img = document.createElement('img');
+          img.src = getAvatarUrl(user);
+          img.alt = user.username;
+          img.onerror = () => {
+            avatar.innerHTML = user.username.charAt(0).toUpperCase();
+          };
+          avatar.appendChild(img);
+          
+          const name = document.createElement('span');
+          name.className = 'dm-name';
+          name.textContent = user.username;
+          li.appendChild(avatar);
+          li.appendChild(name);
+          li.onclick = () => openChannel(dm.id, user.username);
+        } else {
+          // Groupe
+          if (dm.icon) {
+            const img = document.createElement('img');
+            img.src = `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.png?size=32`;
+            img.alt = dm.name || 'Groupe';
+            avatar.appendChild(img);
+          } else {
+            avatar.textContent = (dm.name || 'Groupe').charAt(0).toUpperCase();
+          }
+          
+          const name = document.createElement('span');
+          name.className = 'dm-name';
+          name.textContent = dm.name || 'Groupe';
+          li.appendChild(avatar);
+          li.appendChild(name);
+          li.onclick = () => openChannel(dm.id, dm.name || 'Groupe');
+        }
+        
+        ul.appendChild(li);
+      }
+    }
+
+    function openChannel(id, label) {
+      currentChannelId = id;
+      document.getElementById('chatTitle').textContent = label;
+      loadMessages();
+    }
+
+    async function loadMessages() {
+      const messages = await fetch(`https://discord.com/api/v9/channels/${currentChannelId}/messages?limit=20`, {
+        headers: { Authorization: token }
+      }).then(r => r.json());
+      const chat = document.getElementById('chat');
+      chat.innerHTML = '';
+      messages.reverse().forEach(msg => {
+        appendMessage(msg.author, msg.content);
+      });
+    }
+
+    function getAvatarUrl(user) {
+      if (user.avatar) {
+        const format = user.avatar.startsWith('a_') ? 'gif' : 'png';
+        return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${format}?size=64`;
+      }
+      const defaultIndex = user.discriminator ? parseInt(user.discriminator) % 5 : parseInt(user.id) % 5;
+      return `https://cdn.discordapp.com/embed/avatars/${defaultIndex}.png`;
+    }
+
+    function appendMessage(author, content) {
+      const chat = document.getElementById('chat');
+      const div = document.createElement('div');
+      div.className = 'message';
+      
+      const avatarDiv = document.createElement('div');
+      avatarDiv.className = 'avatar clickable';
+      avatarDiv.onclick = () => openUserProfile(author);
+      
+      const avatarUrl = getAvatarUrl(author);
+      const img = document.createElement('img');
+      img.src = avatarUrl;
+      img.alt = author.username;
+      img.onerror = () => {
+        avatarDiv.innerHTML = author.username.charAt(0).toUpperCase();
+      };
+      avatarDiv.appendChild(img);
+      
+      const messageContent = document.createElement('div');
+      messageContent.className = 'message-content';
+      
+      const username = document.createElement('div');
+      username.className = 'username clickable';
+      username.textContent = author.username;
+      username.onclick = () => openUserProfile(author);
+      
+      const messageText = document.createElement('div');
+      messageText.className = 'message-text';
+      messageText.textContent = content;
+      
+      messageContent.appendChild(username);
+      messageContent.appendChild(messageText);
+      
+      div.appendChild(avatarDiv);
+      div.appendChild(messageContent);
+      
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function openUserProfile(user) {
+      try {
+        // Récupérer plus d'infos sur l'utilisateur
+        const userDetails = await fetch(`https://discord.com/api/v9/users/${user.id}`, {
+          headers: { Authorization: token }
+        }).then(r => r.json()).catch(() => user);
+
+        // Mettre à jour la modal
+        document.getElementById('modalAvatar').src = getAvatarUrl(userDetails);
+        document.getElementById('modalUsername').textContent = userDetails.username || user.username;
+        document.getElementById('modalDiscriminator').textContent = userDetails.discriminator ? `#${userDetails.discriminator}` : '';
+        document.getElementById('modalUserId').textContent = userDetails.id || user.id;
+        document.getElementById('modalBio').textContent = userDetails.bio || 'Aucune biographie.';
+        
+        // Calculer la date de création du compte
+        const createdAt = new Date((parseInt(userDetails.id || user.id) / 4194304) + 1420070400000);
+        document.getElementById('modalCreatedAt').textContent = createdAt.toLocaleDateString('fr-FR');
+        
+        // Gérer la bannière si elle existe
+        const banner = document.getElementById('profileBanner');
+        if (userDetails.banner) {
+          const bannerUrl = `https://cdn.discordapp.com/banners/${userDetails.id}/${userDetails.banner}.png?size=600`;
+          banner.style.backgroundImage = `url(${bannerUrl})`;
+          banner.style.backgroundColor = '';
+        } else if (userDetails.accent_color) {
+          banner.style.backgroundImage = '';
+          banner.style.backgroundColor = `#${userDetails.accent_color.toString(16).padStart(6, '0')}`;
+        } else {
+          banner.style.backgroundImage = '';
+          banner.style.backgroundColor = '#5865f2';
+        }
+        
+        // Afficher la modal
+        document.getElementById('userModal').classList.remove('hidden');
+      } catch (error) {
+        console.error('Erreur lors du chargement du profil:', error);
+      }
+    }
+
+    function closeUserModal() {
+      document.getElementById('userModal').classList.add('hidden');
+    }
+
+    // Fermer la modal en cliquant à l'extérieur
+    document.getElementById('userModal').onclick = function(e) {
+      if (e.target === this) {
+        closeUserModal();
+      }
+    }
+
+    function sendMessageHard() {
+      const message = document.getElementById('message');
+      const mentions = document.getElementById('mentions').value.trim();
+      if (!currentChannelId || !token || !message.value.trim()) return;
+      const content = message.value.trim() + (mentions ? ' ' + mentions : '');
+      message.value = '';
+      
+      const fakeUser = {
+        id: userId,
+        username: 'Vous',
+        avatar: null
+      };
+      appendMessage(fakeUser, content);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `https://discord.com/api/v9/channels/${currentChannelId}/messages`, true);
+      xhr.setRequestHeader('Authorization', token);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({ content }));
+    }
+
+    function sendColoredMessage() {
+  const message = document.getElementById('message');
+  const mentions = document.getElementById('mentions').value.trim();
+  if (!currentChannelId || !token || !message.value.trim()) return;
+
+  const lines = message.value.trim().split('\n');
+  const ansiLines = lines.map((line, index) => {
+    if (index % 3 === 0) return `\u001b[31m${line}`; // Rouge
+    if (index % 3 === 1) return `\u001b[33m${line}`; // Jaune
+    return `\u001b[32m${line}`; // Vert
+  });
+
+  const content = `\`\`\`ansi\n${ansiLines.join('\n')}\n\`\`\`${mentions ? ' ' + mentions : ''}`;
+  message.value = '';
+
+  const fakeUser = {
+    id: userId,
+    username: 'Vous',
+    avatar: null
+  };
+  appendMessage(fakeUser, ansiLines.join('\n'));
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', `https://discord.com/api/v9/channels/${currentChannelId}/messages`, true);
+  xhr.setRequestHeader('Authorization', token);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.send(JSON.stringify({ content }));
+}
+
+  </script>
+</body>
+</html>
