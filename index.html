@@ -1,20 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:title" content="Salem c yuzu" />
+<meta property="og:description" content="jte flood tmr la tapin" />
+<meta property="og:image" content="https://example.com/image.jpg" />
+<meta property="og:thumbnail" content="https://example.com/thumbnail.jpg" />
+<meta property="og:url" content="https://example.com/" />
+<meta property="og:type" content="website" />
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="logo.jpg" type="image/jpeg">
 
   <title>Yuzu-cord</title>
 </head>
 <body>
-    <body>
-
   <div id="sidebar">
-    <input id="token" type="text" placeholder="Token Discord (ALT)" style="width: 100%; margin-bottom: 6px;" oninput="connect()">
-    <button onclick="loadGuilds()">Serveurs</button>
-    <button onclick="loadDMs()">DMs / Groupes</button>
+    <div class="token-section">
+      <input id="token" type="text" placeholder="Token Discord (ALT)" style="width: 100%; margin-bottom: 6px;" oninput="connect()">
+      <div class="connection-status" id="connectionStatus">Déconnecté</div>
+    </div>
+    
+    <div class="action-buttons">
+      <button onclick="loadGuilds()" class="action-btn">
+        <span class="btn-icon">S</span>
+        <span class="btn-text">Serveurs</span>
+      </button>
+      <button onclick="loadDMs()" class="action-btn">
+        <span class="btn-icon">D</span>
+        <span class="btn-text">DMs / Groupes</span>
+      </button>
+    </div>
+
+    <div class="sort-controls">
+      <div class="sort-section">
+        <label class="sort-label">Trier les serveurs:</label>
+        <select id="guildSort" onchange="sortGuilds()">
+          <option value="name">Par nom</option>
+          <option value="members">Par membres</option>
+          <option value="recent">Par activité récente</option>
+        </select>
+      </div>
+      
+      <div class="sort-section">
+        <label class="sort-label">Trier les DMs:</label>
+        <select id="dmSort" onchange="sortDMs()">
+          <option value="recent">Par dernier message</option>
+          <option value="name">Par nom</option>
+          <option value="unread">Par non lus</option>
+        </select>
+      </div>
+      
+      <button onclick="refreshData()" class="refresh-btn">
+        <span class="btn-icon">R</span>
+        <span class="btn-text">Actualiser</span>
+      </button>
+    </div>
 
     <div class="group">Serveurs</div>
     <ul id="guildList"></ul>
@@ -96,6 +138,9 @@
     let socket = null;
     let userId = null;
     let guildMemberCache = new Map();
+    let guildsData = [];
+    let dmsData = [];
+    let lastMessageCache = new Map();
 
     document.getElementById('message').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -108,13 +153,39 @@
       token = document.getElementById('token').value;
       if (!token) return;
 
-      const user = await fetch('https://discord.com/api/v9/users/@me', {
-        headers: { Authorization: token }
-      }).then(r => r.json());
-      userId = user.id;
+      const statusElement = document.getElementById('connectionStatus');
+      if (!statusElement) return;
       
-      // Afficher le profil utilisateur
-      updateUserProfile(user);
+      statusElement.textContent = 'Connexion...';
+      statusElement.className = 'connection-status';
+
+      try {
+        const response = await fetch('https://discord.com/api/v9/users/@me', {
+          headers: { Authorization: token }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Erreur HTTP: ${response.status}`);
+        }
+        
+        const user = await response.json();
+        
+        if (user && user.id) {
+          userId = user.id;
+          statusElement.textContent = 'Connecté';
+          statusElement.className = 'connection-status connected';
+          
+          // Afficher le profil utilisateur
+          updateUserProfile(user);
+        } else {
+          throw new Error('Token invalide');
+        }
+      } catch (error) {
+        statusElement.textContent = 'Erreur de connexion';
+        statusElement.className = 'connection-status';
+        console.error('Erreur de connexion:', error);
+        return;
+      }
 
       if (socket) socket.close();
       socket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
@@ -133,51 +204,119 @@
       };
 
       socket.onmessage = ({ data }) => {
-        const payload = JSON.parse(data);
-        if (payload.t === 'MESSAGE_CREATE') {
-          const msg = payload.d;
-          if (msg.channel_id === currentChannelId && msg.author.id !== userId) {
-            appendMessage(msg.author, msg.content);
+        try {
+          const payload = JSON.parse(data);
+          if (payload.t === 'MESSAGE_CREATE') {
+            const msg = payload.d;
+            if (msg.channel_id === currentChannelId && msg.author.id !== userId) {
+              appendMessage(msg.author, msg.content);
+            }
+            
+            // Mettre à jour le cache des derniers messages sans re-rendre
+            updateLastMessageCache(msg.channel_id, msg);
           }
+        } catch (error) {
+          console.error('Erreur lors du traitement du message WebSocket:', error);
         }
+      };
+
+      socket.onerror = (error) => {
+        console.error('Erreur WebSocket:', error);
       };
     }
 
     async function loadGuilds() {
-      const guilds = await fetch('https://discord.com/api/v9/users/@me/guilds', {
-        headers: { Authorization: token }
-      }).then(r => r.json());
+      try {
+        const guilds = await fetch('https://discord.com/api/v9/users/@me/guilds', {
+          headers: { Authorization: token }
+        }).then(r => r.json());
+        
+        guildsData = guilds;
+        window.forceRender = true;
+        renderGuilds();
+        hideChannelSidebar();
+      } catch (error) {
+        console.error('Erreur lors du chargement des serveurs:', error);
+      }
+    }
+
+    function renderGuilds() {
       const ul = document.getElementById('guildList');
-      ul.innerHTML = '';
-      hideChannelSidebar();
+      if (!ul) return;
       
-      for (const g of guilds) {
-        const li = document.createElement('li');
-        li.className = 'server-item';
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'server-avatar';
-        
-        if (g.icon) {
-          const img = document.createElement('img');
-          img.src = `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=32`;
-          img.alt = g.name;
-          img.onerror = () => {
-            avatar.innerHTML = g.name.charAt(0).toUpperCase();
-          };
-          avatar.appendChild(img);
-        } else {
-          avatar.textContent = g.name.charAt(0).toUpperCase();
+      // Éviter les re-rendus inutiles
+      if (ul.children.length > 0 && !window.forceRender) {
+        return;
+      }
+      
+      ul.innerHTML = '';
+      
+      const sortType = document.getElementById('guildSort')?.value || 'name';
+      let sortedGuilds = [...guildsData];
+      
+      switch (sortType) {
+        case 'name':
+          sortedGuilds.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          break;
+        case 'members':
+          // Trier par nombre de membres (approximatif basé sur l'ID)
+          sortedGuilds.sort((a, b) => {
+            const aMembers = a.approximate_member_count || 0;
+            const bMembers = b.approximate_member_count || 0;
+            return bMembers - aMembers;
+          });
+          break;
+        case 'recent':
+          // Trier par activité récente (basé sur l'ID pour l'instant)
+          sortedGuilds.sort((a, b) => {
+            const aTime = new Date(a.joined_at || 0).getTime();
+            const bTime = new Date(b.joined_at || 0).getTime();
+            return bTime - aTime;
+          });
+          break;
+      }
+      
+      for (const g of sortedGuilds) {
+        try {
+          const li = document.createElement('li');
+          li.className = 'server-item';
+          
+          const avatar = document.createElement('div');
+          avatar.className = 'server-avatar';
+          
+          if (g.icon) {
+            const img = document.createElement('img');
+            img.src = `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=32`;
+            img.alt = g.name || 'Serveur';
+            img.onerror = () => {
+              avatar.innerHTML = (g.name || 'S').charAt(0).toUpperCase();
+            };
+            avatar.appendChild(img);
+          } else {
+            avatar.textContent = (g.name || 'Serveur').charAt(0).toUpperCase();
+          }
+          
+          const name = document.createElement('span');
+          name.className = 'server-name';
+          name.textContent = g.name || 'Serveur';
+          
+          li.appendChild(avatar);
+          li.appendChild(name);
+          li.onclick = () => loadChannels(g.id, g.name || 'Serveur');
+          ul.appendChild(li);
+        } catch (error) {
+          console.error('Erreur lors du rendu d\'un serveur:', error);
         }
-        
-        const name = document.createElement('span');
-        name.className = 'server-name';
-        name.textContent = g.name;
-        
-        li.appendChild(avatar);
-        li.appendChild(name);
-        li.onclick = () => loadChannels(g.id, g.name);
-        ul.appendChild(li);
+      }
+      
+      // Réinitialiser le flag de force render
+      window.forceRender = false;
+    }
+
+    function sortGuilds() {
+      if (guildsData.length > 0) {
+        window.forceRender = true;
+        renderGuilds();
       }
     }
 
@@ -226,57 +365,274 @@
     }
 
     async function loadDMs() {
-      const dms = await fetch('https://discord.com/api/v9/users/@me/channels', {
-        headers: { Authorization: token }
-      }).then(r => r.json());
-      const ul = document.getElementById('dmList');
-      ul.innerHTML = '';
-      hideChannelSidebar(); // Cacher la sidebar des salons quand on charge les DMs
+      try {
+        const dms = await fetch('https://discord.com/api/v9/users/@me/channels', {
+          headers: { Authorization: token }
+        }).then(r => r.json());
+        
+        dmsData = dms;
+        
+        // Récupérer les derniers messages pour chaque DM (limité)
+        await loadLastMessages();
+        
+        window.forceRender = true;
+        renderDMs();
+        hideChannelSidebar();
+      } catch (error) {
+        console.error('Erreur lors du chargement des DMs:', error);
+      }
+    }
+
+    async function loadLastMessages() {
+      // Limiter le nombre de requêtes pour éviter la surcharge
+      const maxRequests = 5;
+      let requestCount = 0;
       
-      for (const dm of dms) {
-        const li = document.createElement('li');
-        li.className = 'dm-item';
+      for (const dm of dmsData) {
+        if (requestCount >= maxRequests) break;
         
-        const avatar = document.createElement('div');
-        avatar.className = 'dm-avatar';
-        
-        if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
-          // DM privé
-          const user = dm.recipients[0];
-          const img = document.createElement('img');
-          img.src = getAvatarUrl(user);
-          img.alt = user.username;
-          img.onerror = () => {
-            avatar.innerHTML = user.username.charAt(0).toUpperCase();
-          };
-          avatar.appendChild(img);
+        try {
+          const response = await fetch(`https://discord.com/api/v9/channels/${dm.id}/messages?limit=1`, {
+            headers: { Authorization: token }
+          });
           
-          const name = document.createElement('span');
-          name.className = 'dm-name';
-          name.textContent = user.username;
-          li.appendChild(avatar);
-          li.appendChild(name);
-          li.onclick = () => openChannel(dm.id, user.username);
-        } else {
-          // Groupe
-          if (dm.icon) {
-            const img = document.createElement('img');
-            img.src = `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.png?size=32`;
-            img.alt = dm.name || 'Groupe';
-            avatar.appendChild(img);
-          } else {
-            avatar.textContent = (dm.name || 'Groupe').charAt(0).toUpperCase();
+          if (!response.ok) {
+            console.warn(`Impossible de charger les messages pour ${dm.id}: ${response.status}`);
+            continue;
           }
           
-          const name = document.createElement('span');
-          name.className = 'dm-name';
-          name.textContent = dm.name || 'Groupe';
-          li.appendChild(avatar);
-          li.appendChild(name);
-          li.onclick = () => openChannel(dm.id, dm.name || 'Groupe');
+          const messages = await response.json();
+          
+          if (messages && messages.length > 0) {
+            lastMessageCache.set(dm.id, {
+              content: messages[0].content || '',
+              timestamp: new Date(messages[0].timestamp),
+              author: messages[0].author?.username || 'Inconnu'
+            });
+          }
+          
+          requestCount++;
+          
+          // Pause entre les requêtes pour éviter la surcharge
+          if (requestCount < maxRequests) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          console.error(`Erreur lors du chargement du dernier message pour ${dm.id}:`, error);
         }
+      }
+    }
+
+    function renderDMs() {
+      const ul = document.getElementById('dmList');
+      if (!ul) return;
+      
+      // Éviter les re-rendus inutiles
+      if (ul.children.length > 0 && !window.forceRender) {
+        return;
+      }
+      
+      ul.innerHTML = '';
+      
+      const sortType = document.getElementById('dmSort')?.value || 'recent';
+      let sortedDMs = [...dmsData];
+      
+      switch (sortType) {
+        case 'recent':
+          sortedDMs.sort((a, b) => {
+            const aLastMessage = lastMessageCache.get(a.id);
+            const bLastMessage = lastMessageCache.get(b.id);
+            
+            if (!aLastMessage && !bLastMessage) return 0;
+            if (!aLastMessage) return 1;
+            if (!bLastMessage) return -1;
+            
+            return bLastMessage.timestamp - aLastMessage.timestamp;
+          });
+          break;
+        case 'name':
+          sortedDMs.sort((a, b) => {
+            const aName = getDMName(a);
+            const bName = getDMName(b);
+            return aName.localeCompare(bName);
+          });
+          break;
+        case 'unread':
+          // Trier par messages non lus (simulation)
+          sortedDMs.sort((a, b) => {
+            const aUnread = Math.random() > 0.7; // Simulation
+            const bUnread = Math.random() > 0.7;
+            if (aUnread && !bUnread) return -1;
+            if (!aUnread && bUnread) return 1;
+            return 0;
+          });
+          break;
+      }
+      
+      for (const dm of sortedDMs) {
+        try {
+          const li = document.createElement('li');
+          li.className = 'dm-item';
+          
+          // Ajouter la classe unread si nécessaire (simulation)
+          if (Math.random() > 0.8) {
+            li.classList.add('unread');
+          }
+          
+          const avatar = document.createElement('div');
+          avatar.className = 'dm-avatar';
+          
+          if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
+            // DM privé
+            const user = dm.recipients[0];
+            const img = document.createElement('img');
+            img.src = getAvatarUrl(user);
+            img.alt = user.username || 'Utilisateur';
+            img.onerror = () => {
+              avatar.innerHTML = (user.username || 'U').charAt(0).toUpperCase();
+            };
+            avatar.appendChild(img);
+            
+            const name = document.createElement('span');
+            name.className = 'dm-name';
+            name.textContent = user.username || 'Utilisateur';
+            li.appendChild(avatar);
+            li.appendChild(name);
+            li.onclick = () => openChannel(dm.id, user.username || 'Utilisateur');
+          } else {
+            // Groupe
+            if (dm.icon) {
+              const img = document.createElement('img');
+              img.src = `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.png?size=32`;
+              img.alt = dm.name || 'Groupe';
+              img.onerror = () => {
+                avatar.textContent = (dm.name || 'G').charAt(0).toUpperCase();
+              };
+              avatar.appendChild(img);
+            } else {
+              avatar.textContent = (dm.name || 'Groupe').charAt(0).toUpperCase();
+            }
+            
+            const name = document.createElement('span');
+            name.className = 'dm-name';
+            name.textContent = dm.name || 'Groupe';
+            li.appendChild(avatar);
+            li.appendChild(name);
+            li.onclick = () => openChannel(dm.id, dm.name || 'Groupe');
+          }
+          
+          // Ajouter l'heure du dernier message
+          const lastMessage = lastMessageCache.get(dm.id);
+          if (lastMessage) {
+            const timeElement = document.createElement('div');
+            timeElement.className = 'last-message-time';
+            timeElement.textContent = formatTime(lastMessage.timestamp);
+            li.appendChild(timeElement);
+            
+            // Ajouter un tooltip avec le dernier message
+            const tooltipText = `Dernier message de ${lastMessage.author}:\n${lastMessage.content}`;
+            addTooltip(li, tooltipText);
+          }
+          
+          // Ajouter un badge pour les messages non lus (simulation)
+          if (li.classList.contains('unread')) {
+            const badge = document.createElement('div');
+            badge.className = 'unread-badge';
+            badge.textContent = Math.floor(Math.random() * 5) + 1;
+            li.appendChild(badge);
+          }
+          
+          ul.appendChild(li);
+        } catch (error) {
+          console.error('Erreur lors du rendu d\'un DM:', error);
+        }
+      }
+      
+      // Réinitialiser le flag de force render
+      window.forceRender = false;
+    }
+
+    function getDMName(dm) {
+      if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
+        return dm.recipients[0].username;
+      }
+      return dm.name || 'Groupe';
+    }
+
+    function formatTime(date) {
+      const now = new Date();
+      const diff = now - date;
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
+      
+      if (minutes < 1) return 'Maintenant';
+      if (minutes < 60) return `${minutes}m`;
+      if (hours < 24) return `${hours}h`;
+      if (days < 7) return `${days}j`;
+      return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    }
+
+    function sortDMs() {
+      if (dmsData.length > 0) {
+        window.forceRender = true;
+        renderDMs();
+      }
+    }
+
+    function updateLastMessageCache(channelId, message) {
+      try {
+        if (!channelId || !message) return;
         
-        ul.appendChild(li);
+        lastMessageCache.set(channelId, {
+          content: message.content || '',
+          timestamp: new Date(message.timestamp || Date.now()),
+          author: message.author?.username || 'Inconnu'
+        });
+        
+        // Ne pas re-rendre automatiquement pour éviter les rafraîchissements constants
+        // L'utilisateur peut utiliser le bouton "Actualiser" s'il veut voir les changements
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour du cache des messages:', error);
+      }
+    }
+
+    // Fonction pour afficher des tooltips
+    function addTooltip(element, text) {
+      element.title = text;
+    }
+
+    async function refreshData() {
+      const refreshBtn = document.querySelector('.refresh-btn');
+      if (!refreshBtn) return;
+      
+      // Éviter les clics multiples
+      if (refreshBtn.disabled) return;
+      refreshBtn.disabled = true;
+      
+      const originalText = refreshBtn.innerHTML;
+      
+      // Animation de rotation
+      refreshBtn.innerHTML = '<span class="btn-icon rotating">R</span><span class="btn-text">Actualisation...</span>';
+      
+      try {
+        // Forcer le re-rendu
+        window.forceRender = true;
+        
+        if (guildsData.length > 0) {
+          await loadGuilds();
+        }
+        if (dmsData.length > 0) {
+          await loadDMs();
+        }
+      } catch (error) {
+        console.error('Erreur lors de l\'actualisation:', error);
+      } finally {
+        // Restaurer le texte original et réactiver le bouton
+        setTimeout(() => {
+          refreshBtn.innerHTML = originalText;
+          refreshBtn.disabled = false;
+        }, 1000);
       }
     }
 
@@ -298,12 +654,20 @@
     }
 
     function getAvatarUrl(user) {
-      if (user.avatar) {
-        const format = user.avatar.startsWith('a_') ? 'gif' : 'png';
-        return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${format}?size=64`;
+      try {
+        if (!user || !user.id) return '';
+        
+        if (user.avatar) {
+          const format = user.avatar.startsWith('a_') ? 'gif' : 'png';
+          return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${format}?size=64`;
+        }
+        
+        const defaultIndex = user.discriminator ? parseInt(user.discriminator) % 5 : parseInt(user.id) % 5;
+        return `https://cdn.discordapp.com/embed/avatars/${defaultIndex}.png`;
+      } catch (error) {
+        console.error('Erreur lors de la génération de l\'URL d\'avatar:', error);
+        return '';
       }
-      const defaultIndex = user.discriminator ? parseInt(user.discriminator) % 5 : parseInt(user.id) % 5;
-      return `https://cdn.discordapp.com/embed/avatars/${defaultIndex}.png`;
     }
 
     function appendMessage(author, content) {
