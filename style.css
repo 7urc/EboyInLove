@@ -33,7 +33,6 @@ body {
   flex-direction: column;
 }
 
-/* Profil utilisateur en bas de la sidebar */
 .user-profile {
   margin-top: auto;
   background: #0f0f0f;
@@ -197,7 +196,6 @@ button:hover {
   background: #555;
 }
 
-/* Messages dans le chat */
 .message {
   margin-bottom: 12px;
   font-size: 14px;
@@ -265,7 +263,6 @@ button:hover {
   line-height: 1.4;
 }
 
-/* Modal de profil utilisateur */
 .modal {
   position: fixed;
   z-index: 1000;
@@ -430,7 +427,6 @@ button:hover {
   font-weight: bold;
 }
 
-/* Listes dans la sidebar */
 ul {
   list-style: none;
   padding-left: 0;
@@ -444,7 +440,6 @@ li {
   transition: all 0.2s ease;
 }
 
-/* Serveurs */
 .server-item {
   display: flex;
   align-items: center;
@@ -487,7 +482,6 @@ li {
   white-space: nowrap;
 }
 
-/* DMs et Groupes */
 .dm-item {
   display: flex;
   align-items: center;
@@ -532,7 +526,6 @@ li {
   white-space: nowrap;
 }
 
-/* Badge de notification sur les avatars DM */
 .notification-badge {
   position: absolute;
   top: -4px;
@@ -557,7 +550,6 @@ li {
   100% { transform: scale(1); }
 }
 
-/* Salons */
 .channel-item {
   display: flex;
   align-items: center;
@@ -586,7 +578,6 @@ li {
   white-space: nowrap;
 }
 
-/* Groupes de sections */
 .group {
   font-weight: bold;
   margin-top: 15px;
@@ -597,6 +588,16 @@ li {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.2s ease;
+}
+
+.group:hover {
+  color: #fff;
 }
 
 .group:first-child {
@@ -605,7 +606,12 @@ li {
   padding-top: 0;
 }
 
-/* Nouveau système de notifications */
+.group-arrow {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: #72767d;
+}
+
 .notification {
   position: fixed;
   top: 20px;
@@ -676,7 +682,6 @@ li {
   max-width: 250px;
 }
 
-/* Nouveaux styles pour l'interface améliorée */
 .token-section {
   margin-bottom: 15px;
   padding: 10px;
