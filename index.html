@@ -26,8 +26,8 @@
         <span class="btn-text">Serveurs</span>
       </button>
       <button onclick="yuzuLoadDMs()" class="action-btn">
-        <span class="btn-icon">D</span>
-        <span class="btn-text">DMs / Groupes</span>
+        <span class="btn-icon">M</span>
+        <span class="btn-text">MP / Groupes</span>
       </button>
     </div>
 
@@ -769,29 +769,128 @@
   
   header.appendChild(headerContainer);
   
-  // Liste des salons
+  // Liste des salons et catégories
   list.innerHTML = '';
-  const textChannels = channels.filter(c => c.type === 0).sort((a, b) => a.position - b.position);
   
-  textChannels.forEach(channel => {
-    const li = document.createElement('li');
-    li.className = 'channel-item';
-    li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
+  // Trier les canaux par position
+  channels.sort((a, b) => a.position - b.position);
+  
+  // Grouper par catégorie
+  const categories = {};
+  const uncategorized = [];
+  
+  channels.forEach(channel => {
+    if (channel.type === 4) { // Catégorie
+      categories[channel.id] = {
+        name: channel.name,
+        channels: [],
+        collapsed: false // Ajout de l'état de réduction
+      };
+    } else if (channel.type === 0 && channel.parent_id) { // Salon textuel avec catégorie
+      if (categories[channel.parent_id]) {
+        categories[channel.parent_id].channels.push(channel);
+      }
+    } else if (channel.type === 0) { // Salon textuel sans catégorie
+      uncategorized.push(channel);
+    }
+  });
+  
+  // Afficher les salons non catégorisés
+  if (uncategorized.length > 0) {
+    const categoryDiv = document.createElement('div');
+    categoryDiv.className = 'channel-category';
+    categoryDiv.textContent = 'SALONS TEXTUELS';
+    list.appendChild(categoryDiv);
     
-    const hash = document.createElement('span');
-    hash.className = 'channel-hash';
-    hash.textContent = '#';
-    
-    const name = document.createElement('span');
-    name.className = 'channel-name';
-    name.textContent = channel.name;
-    
-    li.appendChild(hash);
-    li.appendChild(name);
-    list.appendChild(li);
+    uncategorized.forEach(channel => {
+      const li = createChannelItem(channel);
+      list.appendChild(li);
+    });
+  }
+  
+  // Afficher les catégories avec leurs salons
+  Object.entries(categories).forEach(([id, category]) => {
+    if (category.channels.length > 0) {
+      const categoryDiv = document.createElement('div');
+      categoryDiv.className = 'channel-category';
+      categoryDiv.setAttribute('data-category-id', id);
+      
+      // Ajout de la flèche
+      const arrow = document.createElement('span');
+      arrow.className = 'category-arrow';
+      arrow.innerHTML = '▼';
+      categoryDiv.appendChild(arrow);
+      
+      // Nom de la catégorie
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'category-name';
+      nameSpan.textContent = category.name.toUpperCase();
+      categoryDiv.appendChild(nameSpan);
+      
+      // Gestion du clic pour réduire/étendre
+      categoryDiv.onclick = (e) => {
+        // Ne pas déclencher si on clique sur un salon enfant
+        if (e.target.closest('.channel-item')) return;
+        
+        category.collapsed = !category.collapsed;
+        arrow.textContent = category.collapsed ? '▶' : '▼';
+        
+        const channelItems = list.querySelectorAll(`.channel-item[data-category-id="${id}"]`);
+        channelItems.forEach(item => {
+          item.style.display = category.collapsed ? 'none' : 'flex';
+        });
+      };
+      
+      list.appendChild(categoryDiv);
+      
+      // Ajout des salons de la catégorie
+      category.channels.forEach(channel => {
+        const li = createChannelItem(channel);
+        li.setAttribute('data-category-id', id);
+        list.appendChild(li);
+      });
+    }
   });
   
   sidebar.classList.remove('hidden');
+}
+
+// Fonction helper pour créer un élément de salon
+function createChannelItem(channel) {
+  const li = document.createElement('li');
+  li.className = 'channel-item';
+  li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
+  
+  const hash = document.createElement('span');
+  hash.className = 'channel-hash';
+  hash.textContent = '#';
+  
+  const name = document.createElement('span');
+  name.className = 'channel-name';
+  name.textContent = channel.name;
+  
+  li.appendChild(hash);
+  li.appendChild(name);
+  return li;
+}
+
+// Fonction helper pour créer un élément de salon
+function createChannelItem(channel) {
+  const li = document.createElement('li');
+  li.className = 'channel-item';
+  li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
+  
+  const hash = document.createElement('span');
+  hash.className = 'channel-hash';
+  hash.textContent = '#';
+  
+  const name = document.createElement('span');
+  name.className = 'channel-name';
+  name.textContent = channel.name;
+  
+  li.appendChild(hash);
+  li.appendChild(name);
+  return li;
 }
 
     async function yuzuOpenChannel(channelId, channelName) {
