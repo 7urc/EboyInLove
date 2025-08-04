@@ -196,14 +196,23 @@
     async function yuzuLogin() {
       const tokenInput = document.getElementById('tokenInput');
       const loginStatus = document.getElementById('loginStatus');
+      const loginBtn = document.querySelector('.login-btn');
       const token = tokenInput.value.trim();
 
       if (!token) {
         loginStatus.textContent = 'Veuillez entrer un token';
         loginStatus.className = 'login-status error';
+        // Animation de vibration pour l'erreur
+        tokenInput.style.animation = 'shake 0.5s ease-in-out';
+        setTimeout(() => {
+          tokenInput.style.animation = '';
+        }, 500);
         return;
       }
 
+      // Animation de chargement
+      loginBtn.classList.add('loading');
+      loginBtn.textContent = '';
       loginStatus.textContent = 'Connexion en cours...';
       loginStatus.className = 'login-status loading';
 
@@ -225,26 +234,48 @@
           
           loginStatus.textContent = 'Connexion réussie !';
           loginStatus.className = 'login-status success';
+          loginBtn.classList.remove('loading');
+          loginBtn.textContent = '✓ Connecté';
+          loginBtn.style.background = '#4caf50';
           
-          // Masquer la page de connexion et afficher l'app principale
+          // Animation de transition avec délai
           setTimeout(() => {
-            document.getElementById('loginPage').classList.add('hidden');
-            document.getElementById('mainApp').classList.remove('hidden');
+            const loginPage = document.getElementById('loginPage');
+            const mainApp = document.getElementById('mainApp');
             
-            // Mettre à jour le token dans la page principale et initialiser
-            document.getElementById('token').value = token;
-            document.getElementById('connectionStatus').textContent = 'Connecté';
-            document.getElementById('connectionStatus').className = 'connection-status connected';
+            // Animation de sortie pour la page de connexion
+            loginPage.classList.add('fade-out');
             
-            yuzuUpdateUserProfile(user);
-            yuzuLoadConfig();
-          }, 1000);
+            setTimeout(() => {
+              loginPage.classList.add('hidden');
+              mainApp.classList.remove('hidden');
+              mainApp.classList.add('show');
+              
+              // Mettre à jour le token dans la page principale et initialiser
+              document.getElementById('token').value = token;
+              document.getElementById('connectionStatus').textContent = 'Connecté';
+              document.getElementById('connectionStatus').className = 'connection-status connected';
+              
+              yuzuUpdateUserProfile(user);
+              yuzuLoadConfig();
+            }, 600); // Correspond à la durée de l'animation fadeOut
+          }, 1200);
         } else {
           throw new Error('Token invalide');
         }
       } catch (error) {
         loginStatus.textContent = 'Erreur: Token invalide ou problème de connexion';
         loginStatus.className = 'login-status error';
+        loginBtn.classList.remove('loading');
+        loginBtn.textContent = 'Se connecter';
+        loginBtn.style.background = '';
+        
+        // Animation d'erreur
+        tokenInput.style.animation = 'shake 0.5s ease-in-out';
+        setTimeout(() => {
+          tokenInput.style.animation = '';
+        }, 500);
+        
         console.error('Erreur:', error);
       }
     }
