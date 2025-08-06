@@ -1,0 +1,15 @@
+{
+  "name": "discord-ban-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord qui ban tous les membres au démarrage",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  },
+  "keywords": ["discord", "bot", "moderation"],
+  "author": "",
+  "license": "MIT"
+}
