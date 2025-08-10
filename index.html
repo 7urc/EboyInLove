@@ -874,25 +874,6 @@ function createChannelItem(channel) {
   return li;
 }
 
-// Fonction helper pour créer un élément de salon
-function createChannelItem(channel) {
-  const li = document.createElement('li');
-  li.className = 'channel-item';
-  li.onclick = () => yuzuOpenChannel(channel.id, channel.name);
-  
-  const hash = document.createElement('span');
-  hash.className = 'channel-hash';
-  hash.textContent = '#';
-  
-  const name = document.createElement('span');
-  name.className = 'channel-name';
-  name.textContent = channel.name;
-  
-  li.appendChild(hash);
-  li.appendChild(name);
-  return li;
-}
-
     async function yuzuOpenChannel(channelId, channelName) {
   // Détection si le salon est un DM
   const isDM = yuzuDmsData.some(dm => dm.id === channelId);
@@ -1065,6 +1046,63 @@ function createChannelItem(channel) {
         }, 1000);
       });
     }
+
+    // Déconnexion manuelle et nettoyage global
+    function yuzuDisconnect() {
+      yuzuToken = '';
+      yuzuUserId = null;
+
+      try {
+        if (yuzuSocket) {
+          yuzuSocket.close();
+          yuzuSocket = null;
+        }
+      } catch {}
+
+      const statusEl = document.getElementById('connectionStatus');
+      if (statusEl) {
+        statusEl.textContent = 'Déconnecté';
+        statusEl.className = 'connection-status';
+      }
+
+      const settingsGear = document.getElementById('settingsGear');
+      if (settingsGear) settingsGear.classList.add('hidden');
+
+      const userProfile = document.getElementById('userProfile');
+      if (userProfile) userProfile.classList.add('hidden');
+
+      const guildList = document.getElementById('guildList');
+      const dmList = document.getElementById('dmList');
+      const channelList = document.getElementById('channelList');
+      const chat = document.getElementById('chat');
+      const chatTitle = document.getElementById('chatTitle');
+      const channelSidebar = document.getElementById('channelSidebar');
+
+      if (guildList) guildList.innerHTML = '';
+      if (dmList) dmList.innerHTML = '';
+      if (channelList) channelList.innerHTML = '';
+      if (chat) chat.innerHTML = '';
+      if (chatTitle) chatTitle.textContent = 'Aucune conversation';
+      if (channelSidebar) channelSidebar.classList.add('hidden');
+
+      yuzuGuildsData = [];
+      yuzuDmsData = [];
+      yuzuLastMessageCache.clear();
+      yuzuNotificationCounts.clear();
+      yuzuActiveNotifications.clear();
+      yuzuUserDisplayNameCache.clear();
+      yuzuCurrentChannelId = null;
+    }
+
+    // Nettoyage à la fermeture de la page
+    window.addEventListener('beforeunload', () => {
+      try {
+        if (yuzuSocket) yuzuSocket.close(1000);
+      } catch {}
+    });
+
+    // Expose pour debug
+    window.yuzuDisconnect = yuzuDisconnect;
   </script>
 </body>
 </html>
