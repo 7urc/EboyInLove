@@ -1,0 +1,17 @@
+.catalogue {
+  min-height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.catalogue-main {
+  padding: 2rem 0;
+}
+
+.catalogue-main h1 {
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.catalogue-main p {
+  color: var(--text-secondary);
+}
